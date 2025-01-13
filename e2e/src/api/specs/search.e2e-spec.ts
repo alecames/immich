@@ -1,4 +1,4 @@
-import { AssetFileUploadResponseDto, LoginResponseDto, deleteAssets } from '@immich/sdk';
+import { AssetMediaResponseDto, LoginResponseDto, deleteAssets, updateAsset } from '@immich/sdk';
 import { DateTime } from 'luxon';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -7,32 +7,31 @@ import { errorDto } from 'src/responses';
 import { app, asBearerAuth, testAssetDir, utils } from 'src/utils';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-
 const today = DateTime.now();
 
 describe('/search', () => {
   let admin: LoginResponseDto;
   let websocket: Socket;
 
-  let assetFalcon: AssetFileUploadResponseDto;
-  let assetDenali: AssetFileUploadResponseDto;
-  let assetCyclamen: AssetFileUploadResponseDto;
-  let assetNotocactus: AssetFileUploadResponseDto;
-  let assetSilver: AssetFileUploadResponseDto;
-  // let assetDensity: AssetFileUploadResponseDto;
-  // let assetPhiladelphia: AssetFileUploadResponseDto;
-  // let assetOrychophragmus: AssetFileUploadResponseDto;
-  // let assetRidge: AssetFileUploadResponseDto;
-  // let assetPolemonium: AssetFileUploadResponseDto;
-  // let assetWood: AssetFileUploadResponseDto;
-  let assetHeic: AssetFileUploadResponseDto;
-  let assetRocks: AssetFileUploadResponseDto;
-  let assetOneJpg6: AssetFileUploadResponseDto;
-  let assetOneHeic6: AssetFileUploadResponseDto;
-  let assetOneJpg5: AssetFileUploadResponseDto;
-  let assetGlarus: AssetFileUploadResponseDto;
-  let assetSprings: AssetFileUploadResponseDto;
-  let assetLast: AssetFileUploadResponseDto;
+  let assetFalcon: AssetMediaResponseDto;
+  let assetDenali: AssetMediaResponseDto;
+  let assetCyclamen: AssetMediaResponseDto;
+  let assetNotocactus: AssetMediaResponseDto;
+  let assetSilver: AssetMediaResponseDto;
+  let assetDensity: AssetMediaResponseDto;
+  // let assetPhiladelphia: AssetMediaResponseDto;
+  // let assetOrychophragmus: AssetMediaResponseDto;
+  // let assetRidge: AssetMediaResponseDto;
+  // let assetPolemonium: AssetMediaResponseDto;
+  // let assetWood: AssetMediaResponseDto;
+  // let assetGlarus: AssetMediaResponseDto;
+  let assetHeic: AssetMediaResponseDto;
+  let assetRocks: AssetMediaResponseDto;
+  let assetOneJpg6: AssetMediaResponseDto;
+  let assetOneHeic6: AssetMediaResponseDto;
+  let assetOneJpg5: AssetMediaResponseDto;
+  let assetSprings: AssetMediaResponseDto;
+  let assetLast: AssetMediaResponseDto;
 
   beforeAll(async () => {
     await utils.resetDatabase();
@@ -47,14 +46,15 @@ describe('/search', () => {
       { filename: '/albums/nature/silver_fir.jpg' },
       { filename: '/formats/heic/IMG_2682.heic' },
       { filename: '/formats/jpg/el_torcal_rocks.jpg' },
-      { filename: '/formats/motionphoto/Samsung One UI 6.jpg' },
-      { filename: '/formats/motionphoto/Samsung One UI 6.heic' },
-      { filename: '/formats/motionphoto/Samsung One UI 5.jpg' },
-      { filename: '/formats/raw/Nikon/D80/glarus.nef', dto: { isReadOnly: true } },
+      { filename: '/formats/motionphoto/samsung-one-ui-6.jpg' },
+      { filename: '/formats/motionphoto/samsung-one-ui-6.heic' },
+      { filename: '/formats/motionphoto/samsung-one-ui-5.jpg' },
+
       { filename: '/metadata/gps-position/thompson-springs.jpg', dto: { isArchived: true } },
 
       // used for search suggestions
       { filename: '/formats/png/density_plot.png' },
+      { filename: '/formats/raw/Nikon/D80/glarus.nef' },
       { filename: '/formats/raw/Nikon/D700/philadelphia.nef' },
       { filename: '/albums/nature/orychophragmus_violaceus.jpg' },
       { filename: '/albums/nature/tanners_ridge.jpg' },
@@ -63,7 +63,7 @@ describe('/search', () => {
       // last asset
       { filename: '/albums/nature/wood_anemones.jpg' },
     ];
-    const assets: AssetFileUploadResponseDto[] = [];
+    const assets: AssetMediaResponseDto[] = [];
     for (const { filename, dto } of files) {
       const bytes = await readFile(join(testAssetDir, filename));
       assets.push(
@@ -79,6 +79,37 @@ describe('/search', () => {
       await utils.waitForWebsocketEvent({ event: 'assetUpload', id: asset.id });
     }
 
+    // note: the coordinates here are not the actual coordinates of the images and are random for most of them
+    const coordinates = [
+      { latitude: 48.853_41, longitude: 2.3488 }, // paris
+      { latitude: 35.6895, longitude: 139.691_71 }, // tokyo
+      { latitude: 52.524_37, longitude: 13.410_53 }, // berlin
+      { latitude: 1.314_663_1, longitude: 103.845_409_3 }, // singapore
+      { latitude: 41.013_84, longitude: 28.949_66 }, // istanbul
+      { latitude: 5.556_02, longitude: -0.1969 }, // accra
+      { latitude: 37.544_270_6, longitude: -4.727_752_8 }, // andalusia
+      { latitude: 23.133_02, longitude: -82.383_04 }, // havana
+      { latitude: 41.694_11, longitude: 44.833_68 }, // tbilisi
+      { latitude: 31.222_22, longitude: 121.458_06 }, // shanghai
+      { latitude: 38.9711, longitude: -109.7137 }, // thompson springs
+      { latitude: 40.714_27, longitude: -74.005_97 }, // new york
+      { latitude: 47.040_57, longitude: 9.068_04 }, // glarus
+      { latitude: 32.771_52, longitude: -89.116_73 }, // philadelphia
+      { latitude: 31.634_16, longitude: -7.999_94 }, // marrakesh
+      { latitude: 38.523_735_4, longitude: -78.488_619_4 }, // tanners ridge
+      { latitude: 59.938_63, longitude: 30.314_13 }, // st. petersburg
+      { latitude: 0, longitude: 0 }, // null island
+    ];
+
+    const updates = coordinates.map((dto, i) =>
+      updateAsset({ id: assets[i].id, updateAssetDto: dto }, { headers: asBearerAuth(admin.accessToken) }),
+    );
+
+    await Promise.all(updates);
+    for (const [i] of coordinates.entries()) {
+      await utils.waitForWebsocketEvent({ event: 'assetUpdate', id: assets[i].id });
+    }
+
     [
       assetFalcon,
       assetDenali,
@@ -90,9 +121,9 @@ describe('/search', () => {
       assetOneJpg6,
       assetOneHeic6,
       assetOneJpg5,
-      assetGlarus,
       assetSprings,
-      // assetDensity,
+      assetDensity,
+      // assetGlarus,
       // assetPhiladelphia,
       // assetOrychophragmus,
       // assetRidge,
@@ -100,13 +131,13 @@ describe('/search', () => {
       // assetWood,
     ] = assets;
 
-    assetLast = assets.at(-1) as AssetFileUploadResponseDto;
+    assetLast = assets.at(-1) as AssetMediaResponseDto;
 
     await deleteAssets({ assetBulkDeleteDto: { ids: [assetSilver.id] } }, { headers: asBearerAuth(admin.accessToken) });
-  });
+  }, 30_000);
 
   afterAll(async () => {
-    await utils.disconnectWebsocket(websocket);
+    utils.disconnectWebsocket(websocket);
   });
 
   describe('POST /search/metadata', () => {
@@ -151,16 +182,7 @@ describe('/search', () => {
         dto: { size: -1.5 },
         expected: ['size must not be less than 1', 'size must be an integer number'],
       },
-      ...[
-        'isArchived',
-        'isFavorite',
-        'isReadOnly',
-        'isExternal',
-        'isEncoded',
-        'isMotion',
-        'isOffline',
-        'isVisible',
-      ].map((value) => ({
+      ...['isArchived', 'isFavorite', 'isEncoded', 'isOffline', 'isMotion', 'isVisible'].map((value) => ({
         should: `should reject ${value} not a boolean`,
         dto: { [value]: 'immich' },
         expected: [`${value} must be a boolean value`],
@@ -215,14 +237,6 @@ describe('/search', () => {
       {
         should: 'should search by isArchived (false)',
         deferred: () => ({ dto: { size: 1, isArchived: false }, assets: [assetLast] }),
-      },
-      {
-        should: 'should search by isReadOnly (true)',
-        deferred: () => ({ dto: { isReadOnly: true }, assets: [assetGlarus] }),
-      },
-      {
-        should: 'should search by isReadOnly (false)',
-        deferred: () => ({ dto: { size: 1, isReadOnly: false }, assets: [assetLast] }),
       },
       {
         should: 'should search by type (image)',
@@ -292,29 +306,133 @@ describe('/search', () => {
       {
         should: 'should search by originalFilename with spaces',
         deferred: () => ({
-          dto: { originalFileName: 'Samsung One', type: 'IMAGE' },
+          dto: { originalFileName: 'samsung-one', type: 'IMAGE' },
           assets: [assetOneJpg5, assetOneJpg6, assetOneHeic6],
         }),
       },
       {
         should: 'should search by city',
-        deferred: () => ({ dto: { city: 'Ralston' }, assets: [assetHeic] }),
+        deferred: () => ({
+          dto: {
+            city: 'Accra',
+            includeNull: true,
+          },
+          assets: [assetHeic],
+        }),
+      },
+      {
+        should: "should search city ('')",
+        deferred: () => ({
+          dto: {
+            city: '',
+            isVisible: true,
+            includeNull: true,
+          },
+          assets: [assetLast],
+        }),
+      },
+      {
+        should: 'should search city (null)',
+        deferred: () => ({
+          dto: {
+            city: null,
+            isVisible: true,
+            includeNull: true,
+          },
+          assets: [assetLast],
+        }),
       },
       {
         should: 'should search by state',
-        deferred: () => ({ dto: { state: 'Douglas County, Nebraska' }, assets: [assetHeic] }),
+        deferred: () => ({
+          dto: {
+            state: 'New York',
+            includeNull: true,
+          },
+          assets: [assetDensity],
+        }),
+      },
+      {
+        should: "should search state ('')",
+        deferred: () => ({
+          dto: {
+            state: '',
+            isVisible: true,
+            withExif: true,
+            includeNull: true,
+          },
+          assets: [assetLast, assetNotocactus],
+        }),
+      },
+      {
+        should: 'should search state (null)',
+        deferred: () => ({
+          dto: {
+            state: null,
+            isVisible: true,
+            includeNull: true,
+          },
+          assets: [assetLast, assetNotocactus],
+        }),
       },
       {
         should: 'should search by country',
-        deferred: () => ({ dto: { country: 'United States of America' }, assets: [assetHeic] }),
+        deferred: () => ({
+          dto: {
+            country: 'France',
+            includeNull: true,
+          },
+          assets: [assetFalcon],
+        }),
+      },
+      {
+        should: "should search country ('')",
+        deferred: () => ({
+          dto: {
+            country: '',
+            isVisible: true,
+            includeNull: true,
+          },
+          assets: [assetLast],
+        }),
+      },
+      {
+        should: 'should search country (null)',
+        deferred: () => ({
+          dto: {
+            country: null,
+            isVisible: true,
+            includeNull: true,
+          },
+          assets: [assetLast],
+        }),
       },
       {
         should: 'should search by make',
-        deferred: () => ({ dto: { make: 'Canon' }, assets: [assetFalcon, assetDenali] }),
+        deferred: () => ({
+          dto: {
+            make: 'Canon',
+            includeNull: true,
+          },
+          assets: [assetFalcon, assetDenali],
+        }),
       },
       {
         should: 'should search by model',
-        deferred: () => ({ dto: { model: 'Canon EOS 7D' }, assets: [assetDenali] }),
+        deferred: () => ({
+          dto: {
+            model: 'Canon EOS 7D',
+            includeNull: true,
+          },
+          assets: [assetDenali],
+        }),
+      },
+      {
+        should: 'should allow searching the upload library (libraryId: null)',
+        deferred: () => ({
+          dto: { libraryId: null, size: 1 },
+          assets: [assetLast],
+        }),
       },
     ];
 
@@ -356,10 +474,7 @@ describe('/search', () => {
         .get('/search/explore')
         .set('Authorization', `Bearer ${admin.accessToken}`);
       expect(status).toBe(200);
-      expect(body).toEqual([
-        { fieldName: 'exifInfo.city', items: [] },
-        { fieldName: 'smartInfo.tags', items: [] },
-      ]);
+      expect(body).toEqual([{ fieldName: 'exifInfo.city', items: [] }]);
     });
   });
 
@@ -370,13 +485,44 @@ describe('/search', () => {
       expect(body).toEqual(errorDto.unauthorized);
     });
 
-    it('should get places', async () => {
+    it('should get relevant places', async () => {
+      const name = 'Paris';
+
       const { status, body } = await request(app)
-        .get('/search/places?name=Paris')
+        .get(`/search/places?name=${name}`)
         .set('Authorization', `Bearer ${admin.accessToken}`);
+
       expect(status).toBe(200);
       expect(Array.isArray(body)).toBe(true);
-      expect(body.length).toBeGreaterThan(10);
+      if (Array.isArray(body)) {
+        expect(body.length).toBeGreaterThan(10);
+        expect(body[0].name).toEqual(name);
+        expect(body[0].admin2name).toEqual(name);
+      }
+    });
+  });
+
+  describe('GET /search/cities', () => {
+    it('should require authentication', async () => {
+      const { status, body } = await request(app).get('/search/cities');
+      expect(status).toBe(401);
+      expect(body).toEqual(errorDto.unauthorized);
+    });
+
+    it('should get all cities', async () => {
+      const { status, body } = await request(app)
+        .get('/search/cities')
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+
+      expect(status).toBe(200);
+      expect(Array.isArray(body)).toBe(true);
+      if (Array.isArray(body)) {
+        expect(body.length).toBeGreaterThan(10);
+        const assetsWithCity = body.filter((asset) => !!asset.exifInfo?.city);
+        expect(assetsWithCity.length).toEqual(body.length);
+        const cities = new Set(assetsWithCity.map((asset) => asset.exifInfo.city));
+        expect(cities.size).toEqual(body.length);
+      }
     });
   });
 
@@ -387,11 +533,72 @@ describe('/search', () => {
       expect(body).toEqual(errorDto.unauthorized);
     });
 
+    it('should get suggestions for country (including null)', async () => {
+      const { status, body } = await request(app)
+        .get('/search/suggestions?type=country&includeNull=true')
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(body).toEqual([
+        'Cuba',
+        'France',
+        'Georgia',
+        'Germany',
+        'Ghana',
+        'Japan',
+        'Morocco',
+        "People's Republic of China",
+        'Russian Federation',
+        'Singapore',
+        'Spain',
+        'Switzerland',
+        'United States of America',
+        null,
+      ]);
+      expect(status).toBe(200);
+    });
+
     it('should get suggestions for country', async () => {
       const { status, body } = await request(app)
         .get('/search/suggestions?type=country')
         .set('Authorization', `Bearer ${admin.accessToken}`);
-      expect(body).toEqual(['United States of America']);
+      expect(body).toEqual([
+        'Cuba',
+        'France',
+        'Georgia',
+        'Germany',
+        'Ghana',
+        'Japan',
+        'Morocco',
+        "People's Republic of China",
+        'Russian Federation',
+        'Singapore',
+        'Spain',
+        'Switzerland',
+        'United States of America',
+      ]);
+      expect(status).toBe(200);
+    });
+
+    it('should get suggestions for state (including null)', async () => {
+      const { status, body } = await request(app)
+        .get('/search/suggestions?type=state&includeNull=true')
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(body).toEqual([
+        'Andalusia',
+        'Berlin',
+        'Glarus',
+        'Greater Accra',
+        'Havana',
+        'Île-de-France',
+        'Marrakesh-Safi',
+        'Mississippi',
+        'New York',
+        'Shanghai',
+        'St.-Petersburg',
+        'Tbilisi',
+        'Tokyo',
+        'Virginia',
+        null,
+      ]);
       expect(status).toBe(200);
     });
 
@@ -399,7 +606,47 @@ describe('/search', () => {
       const { status, body } = await request(app)
         .get('/search/suggestions?type=state')
         .set('Authorization', `Bearer ${admin.accessToken}`);
-      expect(body).toEqual(['Douglas County, Nebraska', 'Mesa County, Colorado']);
+      expect(body).toEqual([
+        'Andalusia',
+        'Berlin',
+        'Glarus',
+        'Greater Accra',
+        'Havana',
+        'Île-de-France',
+        'Marrakesh-Safi',
+        'Mississippi',
+        'New York',
+        'Shanghai',
+        'St.-Petersburg',
+        'Tbilisi',
+        'Tokyo',
+        'Virginia',
+      ]);
+      expect(status).toBe(200);
+    });
+
+    it('should get suggestions for city (including null)', async () => {
+      const { status, body } = await request(app)
+        .get('/search/suggestions?type=city&includeNull=true')
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(body).toEqual([
+        'Accra',
+        'Berlin',
+        'Glarus',
+        'Havana',
+        'Marrakesh',
+        'Montalbán de Córdoba',
+        'New York City',
+        'Novena',
+        'Paris',
+        'Philadelphia',
+        'Saint Petersburg',
+        'Shanghai',
+        'Stanley',
+        'Tbilisi',
+        'Tokyo',
+        null,
+      ]);
       expect(status).toBe(200);
     });
 
@@ -407,7 +654,40 @@ describe('/search', () => {
       const { status, body } = await request(app)
         .get('/search/suggestions?type=city')
         .set('Authorization', `Bearer ${admin.accessToken}`);
-      expect(body).toEqual(['Palisade', 'Ralston']);
+      expect(body).toEqual([
+        'Accra',
+        'Berlin',
+        'Glarus',
+        'Havana',
+        'Marrakesh',
+        'Montalbán de Córdoba',
+        'New York City',
+        'Novena',
+        'Paris',
+        'Philadelphia',
+        'Saint Petersburg',
+        'Shanghai',
+        'Stanley',
+        'Tbilisi',
+        'Tokyo',
+      ]);
+      expect(status).toBe(200);
+    });
+
+    it('should get suggestions for camera make (including null)', async () => {
+      const { status, body } = await request(app)
+        .get('/search/suggestions?type=camera-make&includeNull=true')
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(body).toEqual([
+        'Apple',
+        'Canon',
+        'FUJIFILM',
+        'NIKON CORPORATION',
+        'PENTAX Corporation',
+        'samsung',
+        'SONY',
+        null,
+      ]);
       expect(status).toBe(200);
     });
 
@@ -423,6 +703,28 @@ describe('/search', () => {
         'PENTAX Corporation',
         'samsung',
         'SONY',
+      ]);
+      expect(status).toBe(200);
+    });
+
+    it('should get suggestions for camera model (including null)', async () => {
+      const { status, body } = await request(app)
+        .get('/search/suggestions?type=camera-model&includeNull=true')
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(body).toEqual([
+        'Canon EOS 7D',
+        'Canon EOS R5',
+        'DSLR-A550',
+        'FinePix S3Pro',
+        'iPhone 7',
+        'NIKON D700',
+        'NIKON D750',
+        'NIKON D80',
+        'PENTAX K10D',
+        'SM-F711N',
+        'SM-S906U',
+        'SM-T970',
+        null,
       ]);
       expect(status).toBe(200);
     });

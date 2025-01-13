@@ -1,29 +1,38 @@
 <script lang="ts">
-  import { page } from '$app/stores';
+  import { run } from 'svelte/legacy';
+
   import UploadCover from '$lib/components/shared-components/drag-and-drop-upload-overlay.svelte';
-  import { dragAndDropFilesStore } from '$lib/stores/drag-and-drop-files.store';
-  import { fileUploadHandler } from '$lib/utils/file-uploader';
+  import { page } from '$app/stores';
 
-  let albumId: string | undefined;
+  import { assetViewingStore } from '$lib/stores/asset-viewing.store';
+  import type { Snippet } from 'svelte';
+  interface Props {
+    children?: Snippet;
+  }
 
-  const dropHandler = async ({ dataTransfer }: DragEvent) => {
-    const files = dataTransfer?.files;
-    if (!files) {
-      return;
-    }
+  let { children }: Props = $props();
+  let { isViewing: showAssetViewer, setAsset, gridScrollTarget } = assetViewingStore;
 
-    const filesArray: File[] = Array.from<File>(files);
-    albumId = ($page.route.id === '/(user)/albums/[albumId]' || undefined) && $page.params.albumId;
-
-    const isShare = $page.route.id === '/(user)/share/[key]' || undefined;
-    if (isShare) {
-      dragAndDropFilesStore.set({ isDragging: true, files: filesArray });
+  // $page.data.asset is loaded by route specific +page.ts loaders if that
+  // route contains the assetId path.
+  run(() => {
+    if ($page.data.asset) {
+      setAsset($page.data.asset);
     } else {
-      await fileUploadHandler(filesArray, albumId);
+      $showAssetViewer = false;
     }
-  };
+    const asset = $page.url.searchParams.get('at');
+    $gridScrollTarget = { at: asset };
+  });
 </script>
 
-<slot {albumId} />
+<div class:display-none={$showAssetViewer}>
+  {@render children?.()}
+</div>
+<UploadCover />
 
-<UploadCover {dropHandler} />
+<style>
+  .display-none {
+    display: none;
+  }
+</style>

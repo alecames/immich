@@ -5,8 +5,11 @@ export enum AssetAction {
   UNFAVORITE = 'unfavorite',
   TRASH = 'trash',
   DELETE = 'delete',
-  // RESTORE = 'restore',
+  RESTORE = 'restore',
   ADD = 'add',
+  ADD_TO_ALBUM = 'add-to-album',
+  UNSTACK = 'unstack',
+  KEEP_THIS_DELETE_OTHERS = 'keep-this-delete-others',
 }
 
 export enum AppRoute {
@@ -34,11 +37,18 @@ export enum AppRoute {
   MEMORY = '/memory',
   TRASH = '/trash',
   PARTNERS = '/partners',
+  BUY = '/buy',
 
   AUTH_LOGIN = '/auth/login',
   AUTH_REGISTER = '/auth/register',
   AUTH_CHANGE_PASSWORD = '/auth/change-password',
   AUTH_ONBOARDING = '/auth/onboarding',
+
+  UTILITIES = '/utilities',
+  DUPLICATES = '/utilities/duplicates',
+
+  FOLDERS = '/folders',
+  TAGS = '/tags',
 }
 
 export enum ProjectionType {
@@ -62,9 +72,8 @@ export const dateFormats = {
 
 export enum QueryParameter {
   ACTION = 'action',
-  ASSET_INDEX = 'assetIndex',
+  ID = 'id',
   IS_OPEN = 'isOpen',
-  MEMORY_INDEX = 'memoryIndex',
   ONBOARDING_STEP = 'step',
   OPEN_SETTING = 'openSetting',
   PREVIOUS_ROUTE = 'previousRoute',
@@ -72,24 +81,32 @@ export enum QueryParameter {
   SEARCHED_PEOPLE = 'searchedPeople',
   SMART_SEARCH = 'smartSearch',
   PAGE = 'page',
+  PATH = 'path',
+}
+
+export enum SessionStorageKey {
+  INFINITE_SCROLL_PAGE = 'infiniteScrollPage',
+  SCROLL_POSITION = 'scrollPosition',
 }
 
 export enum OpenSettingQueryParameterValue {
   OAUTH = 'oauth',
   JOB = 'job',
-  STORAGE_TEMPLATE = 'storageTemplate',
+  STORAGE_TEMPLATE = 'storage-template',
 }
 
 export enum ActionQueryParameterValue {
   MERGE = 'merge',
 }
 
-export const maximumLengthSearchPeople: number = 20;
+export const maximumLengthSearchPeople = 1000;
 
 // time to load the map before displaying the loading spinner
 export const timeToLoadTheMap: number = 100;
 
 export const timeBeforeShowLoadingSpinner: number = 100;
+
+export const timeDebounceOnSearch: number = 300;
 
 // should be the same values as the ones in the app.html
 export enum Theme {
@@ -227,8 +244,6 @@ export const locales = [
   { code: 'sw-KE', name: 'Swahili (Kenya)' },
   { code: 'sv-FI', name: 'Swedish (Finland)' },
   { code: 'sv-SE', name: 'Swedish (Sweden)' },
-  { code: 'syr-SY', name: 'Syriac (Syria)' },
-  { code: 'ta-IN', name: 'Tamil (India)' },
   { code: 'te-IN', name: 'Telugu (India)' },
   { code: 'th-TH', name: 'Thai (Thailand)' },
   { code: 'tn-ZA', name: 'Tswana (South Africa)' },
@@ -240,3 +255,133 @@ export const locales = [
   { code: 'xh-ZA', name: 'Xhosa (South Africa)' },
   { code: 'zu-ZA', name: 'Zulu (South Africa)' },
 ];
+
+export const defaultLang = { name: 'English', code: 'en', loader: () => import('$i18n/en.json') };
+
+export const langs = [
+  { name: 'Afrikaans', code: 'af', loader: () => import('$i18n/af.json') },
+  { name: 'Arabic', code: 'ar', loader: () => import('$i18n/ar.json') },
+  { name: 'Azerbaijani', code: 'az', loader: () => import('$i18n/az.json') },
+  { name: 'Belarusian', code: 'be', loader: () => import('$i18n/be.json') },
+  { name: 'Bulgarian', code: 'bg', loader: () => import('$i18n/bg.json') },
+  { name: 'Bislama', code: 'bi', loader: () => import('$i18n/bi.json') },
+  { name: 'Bengali', code: 'bn', loader: () => import('$i18n/bn.json') },
+  { name: 'Catalan', code: 'ca', loader: () => import('$i18n/ca.json') },
+  { name: 'Czech', code: 'cs', loader: () => import('$i18n/cs.json') },
+  { name: 'Chuvash', code: 'cv', loader: () => import('$i18n/cv.json') },
+  { name: 'Danish', code: 'da', loader: () => import('$i18n/da.json') },
+  { name: 'German', code: 'de', loader: () => import('$i18n/de.json') },
+  defaultLang,
+  { name: 'Greek', code: 'el', loader: () => import('$i18n/el.json') },
+  { name: 'Spanish', code: 'es', loader: () => import('$i18n/es.json') },
+  { name: 'Estonian', code: 'et', loader: () => import('$i18n/et.json') },
+  { name: 'Persian', code: 'fa', loader: () => import('$i18n/fa.json') },
+  { name: 'Finnish', code: 'fi', loader: () => import('$i18n/fi.json') },
+  { name: 'Filipino', code: 'fil', loader: () => import('$i18n/fil.json') },
+  { name: 'French', code: 'fr', loader: () => import('$i18n/fr.json') },
+  { name: 'Hebrew', code: 'he', loader: () => import('$i18n/he.json') },
+  { name: 'Hindi', code: 'hi', loader: () => import('$i18n/hi.json') },
+  { name: 'Croatian', code: 'hr', loader: () => import('$i18n/hr.json') },
+  { name: 'Hungarian', code: 'hu', loader: () => import('$i18n/hu.json') },
+  { name: 'Armenian', code: 'hy', loader: () => import('$i18n/hy.json') },
+  { name: 'Indonesian', code: 'id', loader: () => import('$i18n/id.json') },
+  { name: 'Italian', code: 'it', loader: () => import('$i18n/it.json') },
+  { name: 'Japanese', code: 'ja', loader: () => import('$i18n/ja.json') },
+  { name: 'Kurdish (Northern)', code: 'kmr', loader: () => import('$i18n/kmr.json') },
+  { name: 'Korean', code: 'ko', loader: () => import('$i18n/ko.json') },
+  { name: 'Luxembourgish', code: 'lb', loader: () => import('$i18n/lb.json') },
+  { name: 'Lithuanian', code: 'lt', loader: () => import('$i18n/lt.json') },
+  { name: 'Latvian', code: 'lv', loader: () => import('$i18n/lv.json') },
+  { name: 'Malay (Pattani)', code: 'mfa', loader: () => import('$i18n/mfa.json') },
+  { name: 'Macedonian', code: 'mk', loader: () => import('$i18n/mk.json') },
+  { name: 'Mongolian', code: 'mn', loader: () => import('$i18n/mn.json') },
+  { name: 'Marathi', code: 'mr', loader: () => import('$i18n/mr.json') },
+  { name: 'Malay', code: 'ms', loader: () => import('$i18n/ms.json') },
+  { name: 'Norwegian Bokmål', code: 'nb-NO', weblateCode: 'nb_NO', loader: () => import('$i18n/nb_NO.json') },
+  { name: 'Dutch', code: 'nl', loader: () => import('$i18n/nl.json') },
+  { name: 'Norwegian Nynorsk', code: 'nn', loader: () => import('$i18n/nn.json') },
+  { name: 'Polish', code: 'pl', loader: () => import('$i18n/pl.json') },
+  { name: 'Portuguese', code: 'pt', loader: () => import('$i18n/pt.json') },
+  { name: 'Portuguese (Brazil) ', code: 'pt-BR', weblateCode: 'pt_BR', loader: () => import('$i18n/pt_BR.json') },
+  { name: 'Romanian', code: 'ro', loader: () => import('$i18n/ro.json') },
+  { name: 'Russian', code: 'ru', loader: () => import('$i18n/ru.json') },
+  { name: 'Slovak', code: 'sk', loader: () => import('$i18n/sk.json') },
+  { name: 'Slovenian', code: 'sl', loader: () => import('$i18n/sl.json') },
+  {
+    name: 'Serbian (Cyrillic)',
+    code: 'sr-Cyrl',
+    weblateCode: 'sr_Cyrl',
+    loader: () => import('$i18n/sr_Cyrl.json'),
+  },
+  { name: 'Serbian (Latin)', code: 'sr-Latn', weblateCode: 'sr_Latn', loader: () => import('$i18n/sr_Latn.json') },
+  { name: 'Swedish', code: 'sv', loader: () => import('$i18n/sv.json') },
+  { name: 'Tamil', code: 'ta', loader: () => import('$i18n/ta.json') },
+  { name: 'Telugu', code: 'te', loader: () => import('$i18n/te.json') },
+  { name: 'Thai', code: 'th', loader: () => import('$i18n/th.json') },
+  { name: 'Turkish', code: 'tr', loader: () => import('$i18n/tr.json') },
+  { name: 'Ukrainian', code: 'uk', loader: () => import('$i18n/uk.json') },
+  { name: 'Urdu', code: 'ur', loader: () => import('$i18n/ur.json') },
+  { name: 'Vietnamese', code: 'vi', loader: () => import('$i18n/vi.json') },
+  {
+    name: 'Chinese (Traditional)',
+    code: 'zh-TW',
+    weblateCode: 'zh_Hant',
+    loader: () => import('$i18n/zh_Hant.json'),
+  },
+  {
+    name: 'Chinese (Simplified)',
+    code: 'zh-CN',
+    weblateCode: 'zh_SIMPLIFIED',
+    loader: () => import('$i18n/zh_SIMPLIFIED.json'),
+  },
+  { name: 'Development (keys only)', code: 'dev', loader: () => Promise.resolve({}) },
+];
+
+export enum ImmichProduct {
+  Client = 'immich-client',
+  Server = 'immich-server',
+}
+
+export enum SettingInputFieldType {
+  EMAIL = 'email',
+  TEXT = 'text',
+  NUMBER = 'number',
+  PASSWORD = 'password',
+  COLOR = 'color',
+}
+
+export enum AlbumPageViewMode {
+  LINK_SHARING = 'link-sharing',
+  SELECT_USERS = 'select-users',
+  SELECT_THUMBNAIL = 'select-thumbnail',
+  SELECT_ASSETS = 'select-assets',
+  VIEW_USERS = 'view-users',
+  VIEW = 'view',
+  OPTIONS = 'options',
+}
+
+export enum PersonPageViewMode {
+  VIEW_ASSETS = 'view-assets',
+  SELECT_PERSON = 'select-person',
+  MERGE_PEOPLE = 'merge-people',
+  SUGGEST_MERGE = 'suggest-merge',
+  BIRTH_DATE = 'birth-date',
+  UNASSIGN_ASSETS = 'unassign-faces',
+}
+
+export enum MediaType {
+  All = 'all',
+  Image = 'image',
+  Video = 'video',
+}
+
+export enum ProgressBarStatus {
+  Playing = 'playing',
+  Paused = 'paused',
+}
+
+export enum ToggleVisibility {
+  HIDE_ALL = 'hide-all',
+  HIDE_UNNANEMD = 'hide-unnamed',
+  SHOW_ALL = 'show-all',
+}

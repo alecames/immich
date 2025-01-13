@@ -1,7 +1,7 @@
 //
 // AUTO-GENERATED FILE, DO NOT MODIFY!
 //
-// @dart=2.12
+// @dart=2.18
 
 // ignore_for_file: unused_element, unused_import
 // ignore_for_file: always_put_required_named_parameters_first
@@ -14,7 +14,10 @@ class ServerFeaturesDto {
   /// Returns a new [ServerFeaturesDto] instance.
   ServerFeaturesDto({
     required this.configFile,
+    required this.duplicateDetection,
+    required this.email,
     required this.facialRecognition,
+    required this.importFaces,
     required this.map,
     required this.oauth,
     required this.oauthAutoLaunch,
@@ -28,7 +31,13 @@ class ServerFeaturesDto {
 
   bool configFile;
 
+  bool duplicateDetection;
+
+  bool email;
+
   bool facialRecognition;
+
+  bool importFaces;
 
   bool map;
 
@@ -51,7 +60,10 @@ class ServerFeaturesDto {
   @override
   bool operator ==(Object other) => identical(this, other) || other is ServerFeaturesDto &&
     other.configFile == configFile &&
+    other.duplicateDetection == duplicateDetection &&
+    other.email == email &&
     other.facialRecognition == facialRecognition &&
+    other.importFaces == importFaces &&
     other.map == map &&
     other.oauth == oauth &&
     other.oauthAutoLaunch == oauthAutoLaunch &&
@@ -66,7 +78,10 @@ class ServerFeaturesDto {
   int get hashCode =>
     // ignore: unnecessary_parenthesis
     (configFile.hashCode) +
+    (duplicateDetection.hashCode) +
+    (email.hashCode) +
     (facialRecognition.hashCode) +
+    (importFaces.hashCode) +
     (map.hashCode) +
     (oauth.hashCode) +
     (oauthAutoLaunch.hashCode) +
@@ -78,12 +93,15 @@ class ServerFeaturesDto {
     (trash.hashCode);
 
   @override
-  String toString() => 'ServerFeaturesDto[configFile=$configFile, facialRecognition=$facialRecognition, map=$map, oauth=$oauth, oauthAutoLaunch=$oauthAutoLaunch, passwordLogin=$passwordLogin, reverseGeocoding=$reverseGeocoding, search=$search, sidecar=$sidecar, smartSearch=$smartSearch, trash=$trash]';
+  String toString() => 'ServerFeaturesDto[configFile=$configFile, duplicateDetection=$duplicateDetection, email=$email, facialRecognition=$facialRecognition, importFaces=$importFaces, map=$map, oauth=$oauth, oauthAutoLaunch=$oauthAutoLaunch, passwordLogin=$passwordLogin, reverseGeocoding=$reverseGeocoding, search=$search, sidecar=$sidecar, smartSearch=$smartSearch, trash=$trash]';
 
   Map<String, dynamic> toJson() {
     final json = <String, dynamic>{};
       json[r'configFile'] = this.configFile;
+      json[r'duplicateDetection'] = this.duplicateDetection;
+      json[r'email'] = this.email;
       json[r'facialRecognition'] = this.facialRecognition;
+      json[r'importFaces'] = this.importFaces;
       json[r'map'] = this.map;
       json[r'oauth'] = this.oauth;
       json[r'oauthAutoLaunch'] = this.oauthAutoLaunch;
@@ -100,12 +118,16 @@ class ServerFeaturesDto {
   /// [value] if it's a [Map], null otherwise.
   // ignore: prefer_constructors_over_static_methods
   static ServerFeaturesDto? fromJson(dynamic value) {
+    upgradeDto(value, "ServerFeaturesDto");
     if (value is Map) {
       final json = value.cast<String, dynamic>();
 
       return ServerFeaturesDto(
         configFile: mapValueOfType<bool>(json, r'configFile')!,
+        duplicateDetection: mapValueOfType<bool>(json, r'duplicateDetection')!,
+        email: mapValueOfType<bool>(json, r'email')!,
         facialRecognition: mapValueOfType<bool>(json, r'facialRecognition')!,
+        importFaces: mapValueOfType<bool>(json, r'importFaces')!,
         map: mapValueOfType<bool>(json, r'map')!,
         oauth: mapValueOfType<bool>(json, r'oauth')!,
         oauthAutoLaunch: mapValueOfType<bool>(json, r'oauthAutoLaunch')!,
@@ -163,7 +185,10 @@ class ServerFeaturesDto {
   /// The list of required keys that must be present in a JSON.
   static const requiredKeys = <String>{
     'configFile',
+    'duplicateDetection',
+    'email',
     'facialRecognition',
+    'importFaces',
     'map',
     'oauth',
     'oauthAutoLaunch',

@@ -1,31 +1,33 @@
 <script lang="ts">
   import Button from '$lib/components/elements/buttons/button.svelte';
   import type { ResetOptions } from '$lib/utils/dipatch';
-  import { createEventDispatcher } from 'svelte';
+  import { t } from 'svelte-i18n';
 
-  const dispatch = createEventDispatcher<{
-    reset: ResetOptions;
-    save: void;
-  }>();
+  interface Props {
+    showResetToDefault?: boolean;
+    disabled?: boolean;
+    onReset: (options: ResetOptions) => void;
+    onSave: () => void;
+  }
 
-  export let showResetToDefault = true;
-  export let disabled = false;
+  let { showResetToDefault = true, disabled = false, onReset, onSave }: Props = $props();
 </script>
 
 <div class="mt-8 flex justify-between gap-2">
   <div class="left">
     {#if showResetToDefault}
       <button
-        on:click={() => dispatch('reset', { default: true })}
+        type="button"
+        onclick={() => onReset({ default: true })}
         class="bg-none text-sm font-medium text-immich-primary hover:text-immich-primary/75 dark:text-immich-dark-primary hover:dark:text-immich-dark-primary/75"
       >
-        Reset to default
+        {$t('reset_to_default')}
       </button>
     {/if}
   </div>
 
   <div class="right">
-    <Button {disabled} size="sm" color="gray" on:click={() => dispatch('reset', { default: false })}>Reset</Button>
-    <Button {disabled} size="sm" on:click={() => dispatch('save')}>Save</Button>
+    <Button {disabled} size="sm" color="gray" onclick={() => onReset({ default: false })}>{$t('reset')}</Button>
+    <Button type="submit" {disabled} size="sm" onclick={() => onSave()}>{$t('save')}</Button>
   </div>
 </div>

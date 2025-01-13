@@ -6,22 +6,32 @@ from pathlib import Path
 from socket import socket
 
 from gunicorn.arbiter import Arbiter
-from pydantic import BaseModel, BaseSettings
+from pydantic import BaseModel
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from rich.console import Console
 from rich.logging import RichHandler
 from uvicorn import Server
 from uvicorn.workers import UvicornWorker
 
-from .schemas import ModelType
-
 
 class PreloadModelData(BaseModel):
-    clip: str | None
-    facial_recognition: str | None
+    clip: str | None = None
+    facial_recognition: str | None = None
+
+
+class MaxBatchSize(BaseModel):
+    facial_recognition: int | None = None
 
 
 class Settings(BaseSettings):
-    cache_folder: str = "/cache"
+    model_config = SettingsConfigDict(
+        env_prefix="MACHINE_LEARNING_",
+        case_sensitive=False,
+        env_nested_delimiter="__",
+        protected_namespaces=("settings_",),
+    )
+
+    cache_folder: Path = Path("/cache")
     model_ttl: int = 300
     model_ttl_poll_s: int = 10
     host: str = "0.0.0.0"
@@ -32,20 +42,21 @@ class Settings(BaseSettings):
     model_inter_op_threads: int = 0
     model_intra_op_threads: int = 0
     ann: bool = True
+    ann_fp16_turbo: bool = False
+    ann_tuning_level: int = 2
     preload: PreloadModelData | None = None
+    max_batch_size: MaxBatchSize | None = None
 
-    class Config:
-        env_prefix = "MACHINE_LEARNING_"
-        case_sensitive = False
-        env_nested_delimiter = "__"
+    @property
+    def device_id(self) -> str:
+        return os.environ.get("MACHINE_LEARNING_DEVICE_ID", "0")
 
 
 class LogSettings(BaseSettings):
-    log_level: str = "info"
-    no_color: bool = False
+    model_config = SettingsConfigDict(case_sensitive=False)
 
-    class Config:
-        case_sensitive = False
+    immich_log_level: str = "info"
+    no_color: bool = False
 
 
 _clean_name = str.maketrans(":\\/", "___", ".")
@@ -53,14 +64,6 @@ _clean_name = str.maketrans(":\\/", "___", ".")
 
 def clean_name(model_name: str) -> str:
     return model_name.split("/")[-1].translate(_clean_name)
-
-
-def get_cache_dir(model_name: str, model_type: ModelType) -> Path:
-    return Path(settings.cache_folder) / model_type.value / clean_name(model_name)
-
-
-def get_hf_model_name(model_name: str) -> str:
-    return f"immich-app/{clean_name(model_name)}"
 
 
 LOG_LEVELS: dict[str, int] = {
@@ -77,7 +80,7 @@ LOG_LEVELS: dict[str, int] = {
 settings = Settings()
 log_settings = LogSettings()
 
-LOG_LEVEL = LOG_LEVELS.get(log_settings.log_level.lower(), logging.INFO)
+LOG_LEVEL = LOG_LEVELS.get(log_settings.immich_log_level.lower(), logging.INFO)
 
 
 class CustomRichHandler(RichHandler):

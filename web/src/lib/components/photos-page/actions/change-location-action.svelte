@@ -6,11 +6,17 @@
   import { updateAssets } from '@immich/sdk';
   import MenuOption from '../../shared-components/context-menu/menu-option.svelte';
   import { getAssetControlContext } from '../asset-select-control-bar.svelte';
+  import { mdiMapMarkerMultipleOutline } from '@mdi/js';
+  import { t } from 'svelte-i18n';
 
-  export let menuItem = false;
+  interface Props {
+    menuItem?: boolean;
+  }
+
+  let { menuItem = false }: Props = $props();
   const { clearSelect, getOwnedAssets } = getAssetControlContext();
 
-  let isShowChangeLocation = false;
+  let isShowChangeLocation = $state(false);
 
   async function handleConfirm(point: { lng: number; lat: number }) {
     isShowChangeLocation = false;
@@ -19,18 +25,19 @@
     try {
       await updateAssets({ assetBulkUpdateDto: { ids, latitude: point.lat, longitude: point.lng } });
     } catch (error) {
-      handleError(error, 'Unable to update location');
+      handleError(error, $t('errors.unable_to_update_location'));
     }
     clearSelect();
   }
 </script>
 
 {#if menuItem}
-  <MenuOption text="Change location" on:click={() => (isShowChangeLocation = true)} />
+  <MenuOption
+    text={$t('change_location')}
+    icon={mdiMapMarkerMultipleOutline}
+    onClick={() => (isShowChangeLocation = true)}
+  />
 {/if}
 {#if isShowChangeLocation}
-  <ChangeLocation
-    on:confirm={({ detail: point }) => handleConfirm(point)}
-    on:cancel={() => (isShowChangeLocation = false)}
-  />
+  <ChangeLocation onConfirm={handleConfirm} onCancel={() => (isShowChangeLocation = false)} />
 {/if}

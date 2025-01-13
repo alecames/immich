@@ -2,6 +2,7 @@
   import {
     createPartner,
     getPartners,
+    PartnerDirection,
     removePartner,
     updatePartner,
     type PartnerResponseDto,
@@ -13,10 +14,11 @@
   import Button from '../elements/buttons/button.svelte';
   import CircleIconButton from '../elements/buttons/circle-icon-button.svelte';
   import Icon from '../elements/icon.svelte';
-  import ConfirmDialogue from '$lib/components/shared-components/confirm-dialogue.svelte';
   import UserAvatar from '$lib/components/shared-components/user-avatar.svelte';
   import PartnerSelectionModal from './partner-selection-modal.svelte';
   import SettingSwitch from '$lib/components/shared-components/settings/setting-switch.svelte';
+  import { dialogController } from '$lib/components/shared-components/dialog/dialog';
+  import { t } from 'svelte-i18n';
 
   interface PartnerSharing {
     user: UserResponseDto;
@@ -25,11 +27,15 @@
     inTimeline: boolean;
   }
 
-  export let user: UserResponseDto;
+  interface Props {
+    user: UserResponseDto;
+  }
 
-  let createPartnerFlag = false;
-  let removePartnerDto: PartnerResponseDto | null = null;
-  let partners: Array<PartnerSharing> = [];
+  let { user }: Props = $props();
+
+  let createPartnerFlag = $state(false);
+  // let removePartnerDto: PartnerResponseDto | null = null;
+  let partners: Array<PartnerSharing> = $state([]);
 
   onMount(async () => {
     await refreshPartners();
@@ -39,8 +45,8 @@
     partners = [];
 
     const [sharedBy, sharedWith] = await Promise.all([
-      getPartners({ direction: 'shared-by' }),
-      getPartners({ direction: 'shared-with' }),
+      getPartners({ direction: PartnerDirection.SharedBy }),
+      getPartners({ direction: PartnerDirection.SharedWith }),
     ]);
 
     for (const candidate of sharedBy) {
@@ -58,10 +64,7 @@
     for (const candidate of sharedWith) {
       const existIndex = partners.findIndex((p) => candidate.id === p.user.id);
 
-      if (existIndex >= 0) {
-        partners[existIndex].sharedWithMe = true;
-        partners[existIndex].inTimeline = candidate.inTimeline ?? false;
-      } else {
+      if (existIndex === -1) {
         partners = [
           ...partners,
           {
@@ -71,21 +74,28 @@
             inTimeline: candidate.inTimeline ?? false,
           },
         ];
+      } else {
+        partners[existIndex].sharedWithMe = true;
+        partners[existIndex].inTimeline = candidate.inTimeline ?? false;
       }
     }
   };
 
-  const handleRemovePartner = async () => {
-    if (!removePartnerDto) {
+  const handleRemovePartner = async (partner: PartnerResponseDto) => {
+    const isConfirmed = await dialogController.show({
+      title: $t('stop_photo_sharing'),
+      prompt: $t('stop_photo_sharing_description', { values: { partner: partner.name } }),
+    });
+
+    if (!isConfirmed) {
       return;
     }
 
     try {
-      await removePartner({ id: removePartnerDto.id });
-      removePartnerDto = null;
+      await removePartner({ id: partner.id });
       await refreshPartners();
     } catch (error) {
-      handleError(error, 'Unable to remove partner');
+      handleError(error, $t('errors.unable_to_remove_partner'));
     }
   };
 
@@ -98,7 +108,7 @@
       await refreshPartners();
       createPartnerFlag = false;
     } catch (error) {
-      handleError(error, 'Unable to add partners');
+      handleError(error, $t('errors.unable_to_add_partners'));
     }
   };
 
@@ -107,9 +117,8 @@
       await updatePartner({ id: partner.user.id, updatePartnerDto: { inTimeline } });
 
       partner.inTimeline = inTimeline;
-      partners = partners;
     } catch (error) {
-      handleError(error, 'Unable to update timeline display status');
+      handleError(error, $t('errors.unable_to_update_timeline_display_status'));
     }
   };
 </script>
@@ -133,10 +142,10 @@
 
           {#if partner.sharedByMe}
             <CircleIconButton
-              on:click={() => (removePartnerDto = partner.user)}
+              onclick={() => handleRemovePartner(partner.user)}
               icon={mdiClose}
               size={'16'}
-              title="Stop sharing your photos with this user"
+              title={$t('stop_sharing_photos_with_user')}
             />
           {/if}
         </div>
@@ -145,14 +154,18 @@
           <!-- I am sharing my assets with this user -->
           {#if partner.sharedByMe}
             <hr class="my-4 border border-gray-200 dark:border-gray-700" />
-            <p class="text-xs font-medium my-4">SHARED WITH {partner.user.name.toUpperCase()}</p>
-            <p class="text-md">{partner.user.name} can access</p>
+            <p class="text-xs font-medium my-4">
+              {$t('shared_with_partner', { values: { partner: partner.user.name } }).toUpperCase()}
+            </p>
+            <p class="text-md">{$t('partner_can_access', { values: { partner: partner.user.name } })}</p>
             <ul class="text-sm">
               <li class="flex gap-2 place-items-center py-1 mt-2">
-                <Icon path={mdiCheck} /> All your photos and videos except those in Archived and Deleted
+                <Icon path={mdiCheck} />
+                {$t('partner_can_access_assets')}
               </li>
               <li class="flex gap-2 place-items-center py-1">
-                <Icon path={mdiCheck} /> The location where your photos were taken
+                <Icon path={mdiCheck} />
+                {$t('partner_can_access_location')}
               </li>
             </ul>
           {/if}
@@ -160,12 +173,14 @@
           <!-- this user is sharing assets with me -->
           {#if partner.sharedWithMe}
             <hr class="my-4 border border-gray-200 dark:border-gray-700" />
-            <p class="text-xs font-medium my-4">PHOTOS FROM {partner.user.name.toUpperCase()}</p>
+            <p class="text-xs font-medium my-4">
+              {$t('shared_from_partner', { values: { partner: partner.user.name } }).toUpperCase()}
+            </p>
             <SettingSwitch
-              title="Show in timeline"
-              subtitle="Show photos and videos from this user in your timeline"
+              title={$t('show_in_timeline')}
+              subtitle={$t('show_in_timeline_setting_description')}
               bind:checked={partner.inTimeline}
-              on:toggle={({ detail }) => handleShowOnTimelineChanged(partner, detail)}
+              onToggle={(isChecked) => handleShowOnTimelineChanged(partner, isChecked)}
             />
           {/if}
         </div>
@@ -174,23 +189,10 @@
   {/if}
 
   <div class="flex justify-end mt-5">
-    <Button size="sm" on:click={() => (createPartnerFlag = true)}>Add partner</Button>
+    <Button size="sm" onclick={() => (createPartnerFlag = true)}>{$t('add_partner')}</Button>
   </div>
 </section>
 
 {#if createPartnerFlag}
-  <PartnerSelectionModal
-    {user}
-    on:close={() => (createPartnerFlag = false)}
-    on:add-users={(event) => handleCreatePartners(event.detail)}
-  />
-{/if}
-
-{#if removePartnerDto}
-  <ConfirmDialogue
-    title="Stop sharing your photos?"
-    prompt="{removePartnerDto.name} will no longer be able to access your photos."
-    onClose={() => (removePartnerDto = null)}
-    onConfirm={() => handleRemovePartner()}
-  />
+  <PartnerSelectionModal {user} onClose={() => (createPartnerFlag = false)} onAddUsers={handleCreatePartners} />
 {/if}

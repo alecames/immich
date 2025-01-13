@@ -6,8 +6,13 @@
   import { resetSavedUser, user } from '$lib/stores/user.store';
   import { logout } from '@immich/sdk';
   import type { PageData } from './$types';
+  import { t } from 'svelte-i18n';
 
-  export let data: PageData;
+  interface Props {
+    data: PageData;
+  }
+
+  let { data }: Props = $props();
 
   const onSuccess = async () => {
     await goto(AppRoute.AUTH_LOGIN);
@@ -17,13 +22,14 @@
 </script>
 
 <FullscreenContainer title={data.meta.title}>
-  <p slot="message">
-    Hi {$user.name} ({$user.email}),
-    <br />
-    <br />
-    This is either the first time you are signing into the system or a request has been made to change your password. Please
-    enter the new password below.
-  </p>
+  {#snippet message()}
+    <p>
+      {$t('hi_user', { values: { name: $user.name, email: $user.email } })}
+      <br />
+      <br />
+      {$t('change_password_description')}
+    </p>
+  {/snippet}
 
-  <ChangePasswordForm user={$user} on:success={onSuccess} />
+  <ChangePasswordForm {onSuccess} />
 </FullscreenContainer>

@@ -1,7 +1,7 @@
 //
 // AUTO-GENERATED FILE, DO NOT MODIFY!
 //
-// @dart=2.12
+// @dart=2.18
 
 // ignore_for_file: unused_element, unused_import
 // ignore_for_file: always_put_required_named_parameters_first
@@ -62,12 +62,13 @@ class ValidateLibraryImportPathResponseDto {
   /// [value] if it's a [Map], null otherwise.
   // ignore: prefer_constructors_over_static_methods
   static ValidateLibraryImportPathResponseDto? fromJson(dynamic value) {
+    upgradeDto(value, "ValidateLibraryImportPathResponseDto");
     if (value is Map) {
       final json = value.cast<String, dynamic>();
 
       return ValidateLibraryImportPathResponseDto(
         importPath: mapValueOfType<String>(json, r'importPath')!,
-        isValid: mapValueOfType<bool>(json, r'isValid') ?? false,
+        isValid: mapValueOfType<bool>(json, r'isValid')!,
         message: mapValueOfType<String>(json, r'message'),
       );
     }
@@ -117,6 +118,7 @@ class ValidateLibraryImportPathResponseDto {
   /// The list of required keys that must be present in a JSON.
   static const requiredKeys = <String>{
     'importPath',
+    'isValid',
   };
 }
 

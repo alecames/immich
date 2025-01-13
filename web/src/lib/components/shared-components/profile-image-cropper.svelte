@@ -3,20 +3,27 @@
   import { handleError } from '$lib/utils/handle-error';
   import { createProfileImage, type AssetResponseDto } from '@immich/sdk';
   import domtoimage from 'dom-to-image';
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { onMount } from 'svelte';
   import PhotoViewer from '../asset-viewer/photo-viewer.svelte';
   import Button from '../elements/buttons/button.svelte';
-  import BaseModal from './base-modal.svelte';
   import { NotificationType, notificationController } from './notification/notification';
+  import FullScreenModal from '$lib/components/shared-components/full-screen-modal.svelte';
+  import { t } from 'svelte-i18n';
 
-  export let asset: AssetResponseDto;
+  interface Props {
+    asset: AssetResponseDto;
+    onClose: () => void;
+  }
 
-  const dispatch = createEventDispatcher<{
-    close: void;
-  }>();
-  let imgElement: HTMLDivElement;
+  let { asset, onClose }: Props = $props();
+
+  let imgElement: HTMLDivElement | undefined = $state();
 
   onMount(() => {
+    if (!imgElement) {
+      return;
+    }
+
     imgElement.style.width = '100%';
   });
 
@@ -46,48 +53,46 @@
   };
 
   const handleSetProfilePicture = async () => {
+    if (!imgElement) {
+      return;
+    }
+
     try {
       const blob = await domtoimage.toBlob(imgElement);
       if (await hasTransparentPixels(blob)) {
         notificationController.show({
           type: NotificationType.Error,
-          message: 'Profile pictures cannot have transparent pixels. Please zoom in and/or move the image.',
+          message: $t('errors.profile_picture_transparent_pixels'),
           timeout: 3000,
         });
         return;
       }
       const file = new File([blob], 'profile-picture.png', { type: 'image/png' });
-      const { profileImagePath } = await createProfileImage({ createProfileImageDto: { file } });
+      const { profileImagePath, profileChangedAt } = await createProfileImage({ createProfileImageDto: { file } });
       notificationController.show({
         type: NotificationType.Info,
-        message: 'Profile picture set.',
+        message: $t('profile_picture_set'),
         timeout: 3000,
       });
       $user.profileImagePath = profileImagePath;
+      $user.profileChangedAt = profileChangedAt;
     } catch (error) {
-      handleError(error, 'Error setting profile picture.');
+      handleError(error, $t('errors.unable_to_set_profile_picture'));
     }
-    dispatch('close');
+    onClose();
   };
 </script>
 
-<BaseModal on:close>
-  <svelte:fragment slot="title">
-    <span class="flex place-items-center gap-2">
-      <p class="font-medium">Set profile picture</p>
-    </span>
-  </svelte:fragment>
+<FullScreenModal title={$t('set_profile_picture')} width="auto" {onClose}>
   <div class="flex place-items-center items-center justify-center">
     <div
-      class="relative flex aspect-square w-1/2 overflow-hidden rounded-full border-4 border-immich-primary bg-immich-dark-primary dark:border-immich-dark-primary dark:bg-immich-primary"
+      class="relative flex aspect-square w-[250px] overflow-hidden rounded-full border-4 border-immich-primary bg-immich-dark-primary dark:border-immich-dark-primary dark:bg-immich-primary"
     >
       <PhotoViewer bind:element={imgElement} {asset} />
     </div>
   </div>
-  <span class="flex justify-end p-4">
-    <Button on:click={handleSetProfilePicture}>
-      <p>Set as profile picture</p>
-    </Button>
-  </span>
-  <div class="mb-2 flex max-h-[400px] flex-col" />
-</BaseModal>
+
+  {#snippet stickyBottom()}
+    <Button fullwidth onclick={handleSetProfilePicture}>{$t('set_as_profile_picture')}</Button>
+  {/snippet}
+</FullScreenModal>

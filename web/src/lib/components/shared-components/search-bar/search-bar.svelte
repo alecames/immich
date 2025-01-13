@@ -1,43 +1,58 @@
 <script lang="ts">
   import { AppRoute } from '$lib/constants';
-  import Icon from '$lib/components/elements/icon.svelte';
   import { goto } from '$app/navigation';
   import { isSearchEnabled, preventRaceConditionSearchBar, savedSearchTerms } from '$lib/stores/search.store';
-  import { clickOutside } from '$lib/utils/click-outside';
   import { mdiClose, mdiMagnify, mdiTune } from '@mdi/js';
-  import IconButton from '$lib/components/elements/buttons/icon-button.svelte';
   import SearchHistoryBox from './search-history-box.svelte';
-  import SearchFilterBox from './search-filter-box.svelte';
+  import SearchFilterModal from './search-filter-modal.svelte';
   import type { MetadataSearchDto, SmartSearchDto } from '@immich/sdk';
   import { getMetadataSearchQuery } from '$lib/utils/metadata-search';
   import { handlePromiseError } from '$lib/utils';
+  import { shortcuts } from '$lib/actions/shortcut';
+  import { focusOutside } from '$lib/actions/focus-outside';
+  import CircleIconButton from '$lib/components/elements/buttons/circle-icon-button.svelte';
+  import { t } from 'svelte-i18n';
+  import { generateId } from '$lib/utils/generate-id';
+  import { tick } from 'svelte';
 
-  export let value = '';
-  export let grayTheme: boolean;
-  export let searchQuery: MetadataSearchDto | SmartSearchDto = {};
+  interface Props {
+    value?: string;
+    grayTheme: boolean;
+    searchQuery?: MetadataSearchDto | SmartSearchDto;
+    onSearch?: () => void;
+  }
 
-  let input: HTMLInputElement;
+  let { value = $bindable(''), grayTheme, searchQuery = {}, onSearch }: Props = $props();
 
-  let showHistory = false;
-  let showFilter = false;
-  $: showClearIcon = value.length > 0;
+  let showClearIcon = $derived(value.length > 0);
 
-  const onSearch = async (payload: SmartSearchDto | MetadataSearchDto) => {
+  let input = $state<HTMLInputElement>();
+  let searchHistoryBox = $state<ReturnType<typeof SearchHistoryBox>>();
+  let showSuggestions = $state(false);
+  let showFilter = $state(false);
+  let isSearchSuggestions = $state(false);
+  let selectedId: string | undefined = $state();
+
+  const listboxId = generateId();
+
+  const handleSearch = async (payload: SmartSearchDto | MetadataSearchDto) => {
     const params = getMetadataSearchQuery(payload);
 
-    showHistory = false;
+    closeDropdown();
     showFilter = false;
     $isSearchEnabled = false;
     await goto(`${AppRoute.SEARCH}?${params}`);
+    onSearch?.();
   };
 
   const clearSearchTerm = (searchTerm: string) => {
-    input.focus();
+    input?.focus();
     $savedSearchTerms = $savedSearchTerms.filter((item) => item !== searchTerm);
   };
 
   const saveSearchTerm = (saveValue: string) => {
-    $savedSearchTerms = [saveValue, ...$savedSearchTerms];
+    const filteredSearchTerms = $savedSearchTerms.filter((item) => item.toLowerCase() !== saveValue.toLowerCase());
+    $savedSearchTerms = [saveValue, ...filteredSearchTerms];
 
     if ($savedSearchTerms.length > 5) {
       $savedSearchTerms = $savedSearchTerms.slice(0, 5);
@@ -45,28 +60,32 @@
   };
 
   const clearAllSearchTerms = () => {
-    input.focus();
+    input?.focus();
     $savedSearchTerms = [];
   };
 
   const onFocusIn = () => {
-    showHistory = true;
     $isSearchEnabled = true;
   };
 
   const onFocusOut = () => {
-    if ($isSearchEnabled) {
-      $preventRaceConditionSearchBar = true;
-    }
+    const focusOutTimer = setTimeout(() => {
+      if ($isSearchEnabled) {
+        $preventRaceConditionSearchBar = true;
+      }
 
-    showHistory = false;
-    $isSearchEnabled = false;
-    showFilter = false;
+      closeDropdown();
+      $isSearchEnabled = false;
+      showFilter = false;
+    }, 100);
+
+    clearTimeout(focusOutTimer);
   };
 
   const onHistoryTermClick = async (searchTerm: string) => {
+    value = searchTerm;
     const searchPayload = { query: searchTerm };
-    await onSearch(searchPayload);
+    await handleSearch(searchPayload);
   };
 
   const onFilterClick = () => {
@@ -74,82 +93,149 @@
     value = '';
 
     if (showFilter) {
-      showHistory = false;
+      closeDropdown();
     }
   };
 
   const onSubmit = () => {
-    handlePromiseError(onSearch({ query: value }));
+    handlePromiseError(handleSearch({ query: value }));
     saveSearchTerm(value);
+  };
+
+  const onClear = () => {
+    value = '';
+    input?.focus();
+  };
+
+  const onEscape = () => {
+    closeDropdown();
+    showFilter = false;
+  };
+
+  const onArrow = async (direction: 1 | -1) => {
+    openDropdown();
+    await tick();
+    searchHistoryBox?.moveSelection(direction);
+  };
+
+  const onEnter = (event: KeyboardEvent) => {
+    if (selectedId) {
+      event.preventDefault();
+      searchHistoryBox?.selectActiveOption();
+    }
+  };
+
+  const onInput = () => {
+    openDropdown();
+    searchHistoryBox?.clearSelection();
+  };
+
+  const openDropdown = () => {
+    showSuggestions = true;
+  };
+
+  const closeDropdown = () => {
+    showSuggestions = false;
+    searchHistoryBox?.clearSelection();
+  };
+
+  const onsubmit = (event: Event) => {
+    event.preventDefault();
+    onSubmit();
   };
 </script>
 
-<div class="w-full relative" use:clickOutside on:outclick={onFocusOut} on:escape={onFocusOut}>
+<svelte:window
+  use:shortcuts={[
+    { shortcut: { key: 'Escape' }, onShortcut: onEscape },
+    { shortcut: { ctrl: true, key: 'k' }, onShortcut: () => input?.select() },
+    { shortcut: { ctrl: true, shift: true, key: 'k' }, onShortcut: onFilterClick },
+  ]}
+/>
+
+<div class="w-full relative" use:focusOutside={{ onFocusOut }} tabindex="-1">
   <form
     draggable="false"
     autocomplete="off"
     class="select-text text-sm"
     action={AppRoute.SEARCH}
-    on:reset={() => (value = '')}
-    on:submit|preventDefault={onSubmit}
+    onreset={() => (value = '')}
+    {onsubmit}
+    onfocusin={onFocusIn}
+    role="search"
   >
-    <label>
-      <div class="absolute inset-y-0 left-0 flex items-center pl-6">
-        <div class="dark:text-immich-dark-fg/75">
-          <button class="flex items-center">
-            <Icon ariaLabel="search" path={mdiMagnify} size="1.5em" />
-          </button>
-        </div>
-      </div>
+    <div use:focusOutside={{ onFocusOut: closeDropdown }} tabindex="-1">
+      <label for="main-search-bar" class="sr-only">{$t('search_your_photos')}</label>
       <input
         type="text"
         name="q"
-        class="w-full {grayTheme
-          ? 'dark:bg-immich-dark-gray'
-          : 'dark:bg-immich-dark-bg'} px-14 py-4 text-immich-fg/75 dark:text-immich-dark-fg {(showHistory &&
-          $savedSearchTerms.length > 0) ||
-        showFilter
-          ? 'rounded-t-3xl border  border-gray-200 bg-white dark:border-gray-800'
-          : 'rounded-3xl border border-transparent bg-gray-200'}"
-        placeholder="Search your photos"
+        id="main-search-bar"
+        class="w-full transition-all border-2 px-14 py-4 text-immich-fg/75 dark:text-immich-dark-fg
+        {grayTheme ? 'dark:bg-immich-dark-gray' : 'dark:bg-immich-dark-bg'}
+        {showSuggestions && isSearchSuggestions ? 'rounded-t-3xl' : 'rounded-3xl bg-gray-200'}
+        {$isSearchEnabled && !showFilter ? 'border-gray-200 dark:border-gray-700 bg-white' : 'border-transparent'}"
+        placeholder={$t('search_your_photos')}
         required
         pattern="^(?!m:$).*$"
         bind:value
         bind:this={input}
-        on:click={onFocusIn}
+        onfocus={openDropdown}
+        oninput={onInput}
         disabled={showFilter}
+        role="combobox"
+        aria-controls={listboxId}
+        aria-activedescendant={selectedId ?? ''}
+        aria-expanded={showSuggestions && isSearchSuggestions}
+        aria-autocomplete="list"
+        use:shortcuts={[
+          { shortcut: { key: 'Escape' }, onShortcut: onEscape },
+          { shortcut: { ctrl: true, shift: true, key: 'k' }, onShortcut: onFilterClick },
+          { shortcut: { key: 'ArrowUp' }, onShortcut: () => onArrow(-1) },
+          { shortcut: { key: 'ArrowDown' }, onShortcut: () => onArrow(1) },
+          { shortcut: { key: 'Enter' }, onShortcut: onEnter, preventDefault: false },
+          { shortcut: { key: 'ArrowDown', alt: true }, onShortcut: openDropdown },
+        ]}
       />
 
-      <div class="absolute inset-y-0 {showClearIcon ? 'right-14' : 'right-5'} flex items-center pl-6 transition-all">
-        <div class="dark:text-immich-dark-fg/75">
-          <IconButton on:click={onFilterClick} title="Show search options">
-            <Icon path={mdiTune} size="1.5em" />
-          </IconButton>
-        </div>
-      </div>
-    </label>
-    {#if showClearIcon}
-      <div class="absolute inset-y-0 right-0 flex items-center pr-4">
-        <button
-          type="reset"
-          class="rounded-full p-2 hover:bg-immich-primary/5 active:bg-immich-primary/10 dark:text-immich-dark-fg/75 dark:hover:bg-immich-dark-primary/25 dark:active:bg-immich-dark-primary/[.35]"
-        >
-          <Icon ariaLabel="clear" path={mdiClose} size="1.5em" />
-        </button>
-      </div>
-    {/if}
-
-    <!-- SEARCH HISTORY BOX -->
-    {#if showHistory && $savedSearchTerms.length > 0}
+      <!-- SEARCH HISTORY BOX -->
       <SearchHistoryBox
-        on:clearAllSearchTerms={clearAllSearchTerms}
-        on:clearSearchTerm={({ detail: searchTerm }) => clearSearchTerm(searchTerm)}
-        on:selectSearchTerm={({ detail: searchTerm }) => handlePromiseError(onHistoryTermClick(searchTerm))}
+        bind:this={searchHistoryBox}
+        bind:isSearchSuggestions
+        id={listboxId}
+        searchQuery={value}
+        isOpen={showSuggestions}
+        onClearAllSearchTerms={clearAllSearchTerms}
+        onClearSearchTerm={(searchTerm) => clearSearchTerm(searchTerm)}
+        onSelectSearchTerm={(searchTerm) => handlePromiseError(onHistoryTermClick(searchTerm))}
+        onActiveSelectionChange={(id) => (selectedId = id)}
       />
+    </div>
+
+    <div class="absolute inset-y-0 {showClearIcon ? 'right-14' : 'right-2'} flex items-center pl-6 transition-all">
+      <CircleIconButton title={$t('show_search_options')} icon={mdiTune} onclick={onFilterClick} size="20" />
+    </div>
+    {#if showClearIcon}
+      <div class="absolute inset-y-0 right-0 flex items-center pr-2">
+        <CircleIconButton onclick={onClear} icon={mdiClose} title={$t('clear')} size="20" />
+      </div>
     {/if}
+    <div class="absolute inset-y-0 left-0 flex items-center pl-2">
+      <CircleIconButton
+        type="submit"
+        disabled={showFilter}
+        title={$t('search')}
+        icon={mdiMagnify}
+        size="20"
+        onclick={() => {}}
+      />
+    </div>
   </form>
 
   {#if showFilter}
-    <SearchFilterBox {searchQuery} on:search={({ detail }) => onSearch(detail)} />
+    <SearchFilterModal
+      {searchQuery}
+      onSearch={(payload) => handleSearch(payload)}
+      onClose={() => (showFilter = false)}
+    />
   {/if}
 </div>

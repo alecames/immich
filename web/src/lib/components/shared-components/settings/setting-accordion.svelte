@@ -1,40 +1,95 @@
 <script lang="ts">
   import { slide } from 'svelte/transition';
   import { getAccordionState } from './setting-accordion-state.svelte';
+  import { onDestroy, onMount, type Snippet } from 'svelte';
+  import Icon from '$lib/components/elements/icon.svelte';
 
   const accordionState = getAccordionState();
 
-  export let title: string;
-  export let subtitle = '';
-  export let key: string;
-  export let isOpen = $accordionState.has(key);
+  interface Props {
+    title: string;
+    subtitle?: string;
+    key: string;
+    isOpen?: boolean;
+    autoScrollTo?: boolean;
+    icon?: string;
+    subtitleSnippet?: Snippet;
+    children?: Snippet;
+  }
 
-  $: setIsOpen(isOpen);
+  let {
+    title,
+    subtitle = '',
+    key,
+    isOpen = $bindable($accordionState.has(key)),
+    autoScrollTo = false,
+    icon = '',
+    subtitleSnippet,
+    children,
+  }: Props = $props();
+
+  let accordionElement: HTMLDivElement | undefined = $state();
 
   const setIsOpen = (isOpen: boolean) => {
     if (isOpen) {
       $accordionState = $accordionState.add(key);
+
+      if (autoScrollTo) {
+        setTimeout(() => {
+          accordionElement?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start',
+          });
+        }, 200);
+      }
     } else {
       $accordionState.delete(key);
       $accordionState = $accordionState;
     }
   };
+
+  onDestroy(() => {
+    setIsOpen(false);
+  });
+
+  const onclick = () => {
+    isOpen = !isOpen;
+    setIsOpen(isOpen);
+  };
+
+  onMount(() => {
+    setIsOpen(isOpen);
+  });
 </script>
 
-<div class="border-b-[1px] border-gray-200 py-4 dark:border-gray-700">
-  <button on:click={() => (isOpen = !isOpen)} class="flex w-full place-items-center justify-between text-left">
+<div
+  class="border rounded-2xl my-4 px-6 py-4 transition-all {isOpen
+    ? 'border-immich-primary/40 dark:border-immich-dark-primary/50 shadow-md'
+    : 'dark:border-gray-800'}"
+  bind:this={accordionElement}
+>
+  <button
+    type="button"
+    aria-expanded={isOpen}
+    {onclick}
+    class="flex w-full place-items-center justify-between text-left"
+  >
     <div>
-      <h2 class="font-medium text-immich-primary dark:text-immich-dark-primary">
-        {title}
-      </h2>
+      <div class="flex gap-2 place-items-center">
+        {#if icon}
+          <Icon path={icon} class="text-immich-primary dark:text-immich-dark-primary" size="24" ariaHidden />
+        {/if}
+        <h2 class="font-medium text-immich-primary dark:text-immich-dark-primary">
+          {title}
+        </h2>
+      </div>
 
-      <slot name="subtitle">
-        <p class="text-sm dark:text-immich-dark-fg">{subtitle}</p>
-      </slot>
+      {#if subtitleSnippet}{@render subtitleSnippet()}{:else}
+        <p class="text-sm dark:text-immich-dark-fg mt-1">{subtitle}</p>
+      {/if}
     </div>
 
-    <button
-      aria-expanded={isOpen}
+    <div
       class="immich-circle-icon-button flex place-content-center place-items-center rounded-full p-3 transition-all hover:bg-immich-primary/10 dark:text-immich-dark-fg hover:dark:bg-immich-dark-primary/20"
     >
       <svg
@@ -50,12 +105,12 @@
       >
         <path d="M19 9l-7 7-7-7" />
       </svg>
-    </button>
+    </div>
   </button>
 
   {#if isOpen}
-    <ul transition:slide={{ duration: 250 }} class="mb-2 ml-4">
-      <slot />
+    <ul transition:slide={{ duration: 150 }} class="mb-2 ml-4">
+      {@render children?.()}
     </ul>
   {/if}
 </div>

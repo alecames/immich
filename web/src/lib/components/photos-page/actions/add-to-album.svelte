@@ -1,65 +1,60 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
   import AlbumSelectionModal from '$lib/components/shared-components/album-selection-modal.svelte';
   import MenuOption from '$lib/components/shared-components/context-menu/menu-option.svelte';
-  import {
-    NotificationType,
-    notificationController,
-  } from '$lib/components/shared-components/notification/notification';
-  import { AppRoute } from '$lib/constants';
-  import { addAssetsToAlbum } from '$lib/utils/asset-utils';
-  import { createAlbum, type AlbumResponseDto } from '@immich/sdk';
-  import { getMenuContext } from '../asset-select-context-menu.svelte';
+  import { addAssetsToAlbum, addAssetsToNewAlbum } from '$lib/utils/asset-utils';
+  import type { AlbumResponseDto } from '@immich/sdk';
   import { getAssetControlContext } from '../asset-select-control-bar.svelte';
+  import { mdiImageAlbum, mdiShareVariantOutline } from '@mdi/js';
+  import { t } from 'svelte-i18n';
+  import type { OnAddToAlbum } from '$lib/utils/actions';
 
-  export let shared = false;
-  let showAlbumPicker = false;
+  interface Props {
+    shared?: boolean;
+    onAddToAlbum?: OnAddToAlbum;
+  }
 
-  const { getAssets, clearSelect } = getAssetControlContext();
-  const closeMenu = getMenuContext();
+  let { shared = false, onAddToAlbum = () => {} }: Props = $props();
+
+  let showAlbumPicker = $state(false);
+
+  const { getAssets } = getAssetControlContext();
 
   const handleHideAlbumPicker = () => {
     showAlbumPicker = false;
-    closeMenu();
   };
 
-  const handleAddToNewAlbum = (albumName: string) => {
+  const handleAddToNewAlbum = async (albumName: string) => {
     showAlbumPicker = false;
 
     const assetIds = [...getAssets()].map((asset) => asset.id);
-    createAlbum({ createAlbumDto: { albumName, assetIds } })
-      .then(async (response) => {
-        const { id, albumName } = response;
+    const album = await addAssetsToNewAlbum(albumName, assetIds);
+    if (!album) {
+      return;
+    }
 
-        notificationController.show({
-          message: `Added ${assetIds.length} to ${albumName}`,
-          type: NotificationType.Info,
-        });
-
-        clearSelect();
-
-        await goto(`${AppRoute.ALBUMS}/${id}`);
-      })
-      .catch((error) => {
-        console.error(`[add-to-album.svelte]:handleAddToNewAlbum ${error}`, error);
-      });
+    onAddToAlbum(assetIds, album.id);
   };
 
   const handleAddToAlbum = async (album: AlbumResponseDto) => {
     showAlbumPicker = false;
     const assetIds = [...getAssets()].map((asset) => asset.id);
     await addAssetsToAlbum(album.id, assetIds);
-    clearSelect();
+    onAddToAlbum(assetIds, album.id);
   };
 </script>
 
-<MenuOption on:click={() => (showAlbumPicker = true)} text={shared ? 'Add to Shared Album' : 'Add to Album'} />
+<MenuOption
+  onClick={() => (showAlbumPicker = true)}
+  text={shared ? $t('add_to_shared_album') : $t('add_to_album')}
+  icon={shared ? mdiShareVariantOutline : mdiImageAlbum}
+  shortcut={{ key: 'l', shift: shared }}
+/>
 
 {#if showAlbumPicker}
   <AlbumSelectionModal
     {shared}
-    on:newAlbum={({ detail }) => handleAddToNewAlbum(detail)}
-    on:album={({ detail }) => handleAddToAlbum(detail)}
-    on:close={handleHideAlbumPicker}
+    onNewAlbum={handleAddToNewAlbum}
+    onAlbumClick={handleAddToAlbum}
+    onClose={handleHideAlbumPicker}
   />
 {/if}

@@ -1,116 +1,328 @@
 <script lang="ts">
-  import { page } from '$app/stores';
+  import { shortcuts, type ShortcutOptions } from '$lib/actions/shortcut';
+  import { goto } from '$app/navigation';
+  import type { Action } from '$lib/components/asset-viewer/actions/action';
   import Thumbnail from '$lib/components/assets/thumbnail/thumbnail.svelte';
+  import { AppRoute, AssetAction } from '$lib/constants';
   import { assetViewingStore } from '$lib/stores/asset-viewing.store';
-  import type { BucketPosition, Viewport } from '$lib/stores/assets.store';
+  import type { Viewport } from '$lib/stores/assets.store';
+  import { showDeleteModal } from '$lib/stores/preferences.store';
+  import { deleteAssets } from '$lib/utils/actions';
+  import { archiveAssets, cancelMultiselect, getAssetRatio } from '$lib/utils/asset-utils';
+  import { featureFlags } from '$lib/stores/server-config.store';
   import { handleError } from '$lib/utils/handle-error';
-  import { type AssetResponseDto } from '@immich/sdk';
-  import { createEventDispatcher, onDestroy } from 'svelte';
-  import AssetViewer from '../../asset-viewer/asset-viewer.svelte';
-  import justifiedLayout from 'justified-layout';
-  import { getAssetRatio } from '$lib/utils/asset-utils';
+  import { navigate } from '$lib/utils/navigation';
   import { calculateWidth } from '$lib/utils/timeline-util';
-  import { pushState, replaceState } from '$app/navigation';
+  import { type AssetResponseDto } from '@immich/sdk';
+  import justifiedLayout from 'justified-layout';
+  import { t } from 'svelte-i18n';
+  import AssetViewer from '../../asset-viewer/asset-viewer.svelte';
+  import ShowShortcuts from '../show-shortcuts.svelte';
+  import Portal from '../portal/portal.svelte';
+  import { handlePromiseError } from '$lib/utils';
+  import DeleteAssetDialog from '../../photos-page/delete-asset-dialog.svelte';
+  import type { AssetInteraction } from '$lib/stores/asset-interaction.svelte';
 
-  const dispatch = createEventDispatcher<{ intersected: { container: HTMLDivElement; position: BucketPosition } }>();
+  interface Props {
+    assets: AssetResponseDto[];
+    assetInteraction: AssetInteraction;
+    disableAssetSelect?: boolean;
+    showArchiveIcon?: boolean;
+    viewport: Viewport;
+    onIntersected?: (() => void) | undefined;
+    showAssetName?: boolean;
+    isShowDeleteConfirmation?: boolean;
+    onPrevious?: (() => Promise<AssetResponseDto | undefined>) | undefined;
+    onNext?: (() => Promise<AssetResponseDto | undefined>) | undefined;
+  }
 
-  export let assets: AssetResponseDto[];
-  export let selectedAssets: Set<AssetResponseDto> = new Set();
-  export let disableAssetSelect = false;
-  export let showArchiveIcon = false;
-  export let viewport: Viewport;
+  let {
+    assets = $bindable(),
+    assetInteraction,
+    disableAssetSelect = false,
+    showArchiveIcon = false,
+    viewport,
+    onIntersected = undefined,
+    showAssetName = false,
+    isShowDeleteConfirmation = $bindable(false),
+    onPrevious = undefined,
+    onNext = undefined,
+  }: Props = $props();
 
-  let { isViewing: showAssetViewer } = assetViewingStore;
+  let { isViewing: isViewerOpen, asset: viewingAsset, setAsset } = assetViewingStore;
 
-  let selectedAsset: AssetResponseDto;
+  let showShortcuts = $state(false);
   let currentViewAssetIndex = 0;
-  $: isMultiSelectionMode = selectedAssets.size > 0;
+  let shiftKeyIsDown = $state(false);
+  let lastAssetMouseEvent: AssetResponseDto | null = $state(null);
 
-  const viewAssetHandler = (event: CustomEvent) => {
-    const { asset }: { asset: AssetResponseDto } = event.detail;
-
+  const viewAssetHandler = async (asset: AssetResponseDto) => {
     currentViewAssetIndex = assets.findIndex((a) => a.id == asset.id);
-    selectedAsset = assets[currentViewAssetIndex];
-    $showAssetViewer = true;
-    updateAssetState(selectedAsset.id, false);
+    setAsset(assets[currentViewAssetIndex]);
+    await navigate({ targetRoute: 'current', assetId: $viewingAsset.id });
   };
 
-  const selectAssetHandler = (event: CustomEvent) => {
-    const { asset }: { asset: AssetResponseDto } = event.detail;
-    let temporary = new Set(selectedAssets);
+  const selectAllAssets = () => {
+    assetInteraction.selectAssets(assets);
+  };
 
-    if (selectedAssets.has(asset)) {
-      temporary.delete(asset);
-    } else {
-      temporary.add(asset);
+  const deselectAllAssets = () => {
+    cancelMultiselect(assetInteraction);
+  };
+
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key === 'Shift') {
+      event.preventDefault();
+      shiftKeyIsDown = true;
     }
-
-    selectedAssets = temporary;
   };
 
-  const navigateAssetForward = () => {
-    try {
-      if (currentViewAssetIndex < assets.length - 1) {
-        currentViewAssetIndex++;
-        selectedAsset = assets[currentViewAssetIndex];
-        updateAssetState(selectedAsset.id);
+  const onKeyUp = (event: KeyboardEvent) => {
+    if (event.key === 'Shift') {
+      event.preventDefault();
+      shiftKeyIsDown = false;
+    }
+  };
+
+  const handleSelectAssets = (asset: AssetResponseDto) => {
+    if (!asset) {
+      return;
+    }
+    const deselect = assetInteraction.selectedAssets.has(asset);
+
+    // Select/deselect already loaded assets
+    if (deselect) {
+      for (const candidate of assetInteraction.assetSelectionCandidates) {
+        assetInteraction.removeAssetFromMultiselectGroup(candidate);
       }
-    } catch (error) {
-      handleError(error, 'Cannot navigate to the next asset');
-    }
-  };
-
-  const navigateAssetBackward = () => {
-    try {
-      if (currentViewAssetIndex > 0) {
-        currentViewAssetIndex--;
-        selectedAsset = assets[currentViewAssetIndex];
-        updateAssetState(selectedAsset.id);
-      }
-    } catch (error) {
-      handleError(error, 'Cannot navigate to previous asset');
-    }
-  };
-
-  const updateAssetState = (assetId: string, replace = true) => {
-    const route = `${$page.url.pathname}/photos/${assetId}`;
-
-    if (replace) {
-      replaceState(route, {});
+      assetInteraction.removeAssetFromMultiselectGroup(asset);
     } else {
-      pushState(route, {});
+      for (const candidate of assetInteraction.assetSelectionCandidates) {
+        assetInteraction.selectAsset(candidate);
+      }
+      assetInteraction.selectAsset(asset);
+    }
+
+    assetInteraction.clearAssetSelectionCandidates();
+    assetInteraction.setAssetSelectionStart(deselect ? null : asset);
+  };
+
+  const handleSelectAssetCandidates = (asset: AssetResponseDto | null) => {
+    if (asset) {
+      selectAssetCandidates(asset);
+    }
+    lastAssetMouseEvent = asset;
+  };
+
+  const selectAssetCandidates = (endAsset: AssetResponseDto) => {
+    if (!shiftKeyIsDown) {
+      return;
+    }
+
+    const startAsset = assetInteraction.assetSelectionStart;
+    if (!startAsset) {
+      return;
+    }
+
+    let start = assets.findIndex((a) => a.id === startAsset.id);
+    let end = assets.findIndex((a) => a.id === endAsset.id);
+
+    if (start > end) {
+      [start, end] = [end, start];
+    }
+
+    assetInteraction.setAssetSelectionCandidates(assets.slice(start, end + 1));
+  };
+
+  const onSelectStart = (e: Event) => {
+    if (assetInteraction.selectionActive && shiftKeyIsDown) {
+      e.preventDefault();
     }
   };
 
-  const closeViewer = () => {
-    $showAssetViewer = false;
-    pushState(`${$page.url.pathname}${$page.url.search}`, {});
+  const onDelete = () => {
+    const hasTrashedAsset = assetInteraction.selectedAssetsArray.some((asset) => asset.isTrashed);
+
+    if ($showDeleteModal && (!isTrashEnabled || hasTrashedAsset)) {
+      isShowDeleteConfirmation = true;
+      return;
+    }
+    handlePromiseError(trashOrDelete(hasTrashedAsset));
   };
 
-  onDestroy(() => {
-    $showAssetViewer = false;
+  const onForceDelete = () => {
+    if ($showDeleteModal) {
+      isShowDeleteConfirmation = true;
+      return;
+    }
+    handlePromiseError(trashOrDelete(true));
+  };
+
+  const trashOrDelete = async (force: boolean = false) => {
+    isShowDeleteConfirmation = false;
+    await deleteAssets(
+      !(isTrashEnabled && !force),
+      (assetIds) => (assets = assets.filter((asset) => !assetIds.includes(asset.id))),
+      idsSelectedAssets,
+    );
+    assetInteraction.clearMultiselect();
+  };
+
+  const toggleArchive = async () => {
+    const ids = await archiveAssets(assetInteraction.selectedAssetsArray, !assetInteraction.isAllArchived);
+    if (ids) {
+      assets.filter((asset) => !ids.includes(asset.id));
+      deselectAllAssets();
+    }
+  };
+
+  let shortcutList = $derived(
+    (() => {
+      if ($isViewerOpen) {
+        return [];
+      }
+
+      const shortcuts: ShortcutOptions[] = [
+        { shortcut: { key: '?', shift: true }, onShortcut: () => (showShortcuts = !showShortcuts) },
+        { shortcut: { key: '/' }, onShortcut: () => goto(AppRoute.EXPLORE) },
+        { shortcut: { key: 'A', ctrl: true }, onShortcut: () => selectAllAssets() },
+      ];
+
+      if (assetInteraction.selectionActive) {
+        shortcuts.push(
+          { shortcut: { key: 'Escape' }, onShortcut: deselectAllAssets },
+          { shortcut: { key: 'Delete' }, onShortcut: onDelete },
+          { shortcut: { key: 'Delete', shift: true }, onShortcut: onForceDelete },
+          { shortcut: { key: 'D', ctrl: true }, onShortcut: () => deselectAllAssets() },
+          { shortcut: { key: 'a', shift: true }, onShortcut: toggleArchive },
+        );
+      }
+
+      return shortcuts;
+    })(),
+  );
+
+  const handleNext = async () => {
+    try {
+      let asset: AssetResponseDto | undefined;
+      if (onNext) {
+        asset = await onNext();
+      } else {
+        currentViewAssetIndex = Math.min(currentViewAssetIndex + 1, assets.length - 1);
+        asset = assets[currentViewAssetIndex];
+      }
+
+      await navigateToAsset(asset);
+    } catch (error) {
+      handleError(error, $t('errors.cannot_navigate_next_asset'));
+    }
+  };
+
+  const handlePrevious = async () => {
+    try {
+      let asset: AssetResponseDto | undefined;
+      if (onPrevious) {
+        asset = await onPrevious();
+      } else {
+        currentViewAssetIndex = Math.max(currentViewAssetIndex - 1, 0);
+        asset = assets[currentViewAssetIndex];
+      }
+
+      await navigateToAsset(asset);
+    } catch (error) {
+      handleError(error, $t('errors.cannot_navigate_previous_asset'));
+    }
+  };
+
+  const navigateToAsset = async (asset?: AssetResponseDto) => {
+    if (asset && asset.id !== $viewingAsset.id) {
+      setAsset(asset);
+      await navigate({ targetRoute: 'current', assetId: $viewingAsset.id });
+    }
+  };
+
+  const handleAction = async (action: Action) => {
+    switch (action.type) {
+      case AssetAction.ARCHIVE:
+      case AssetAction.DELETE:
+      case AssetAction.TRASH: {
+        assets.splice(
+          assets.findIndex((a) => a.id === action.asset.id),
+          1,
+        );
+        if (assets.length === 0) {
+          await goto(AppRoute.PHOTOS);
+        } else if (currentViewAssetIndex === assets.length) {
+          await handlePrevious();
+        } else {
+          setAsset(assets[currentViewAssetIndex]);
+        }
+        break;
+      }
+    }
+  };
+
+  const assetMouseEventHandler = (asset: AssetResponseDto | null) => {
+    if (assetInteraction.selectionActive) {
+      handleSelectAssetCandidates(asset);
+    }
+  };
+
+  let isTrashEnabled = $derived($featureFlags.loaded && $featureFlags.trash);
+  let idsSelectedAssets = $derived(assetInteraction.selectedAssetsArray.map(({ id }) => id));
+
+  let geometry = $derived(
+    (() => {
+      const justifiedLayoutResult = justifiedLayout(
+        assets.map((asset) => getAssetRatio(asset)),
+        {
+          boxSpacing: 2,
+          containerWidth: Math.floor(viewport.width),
+          containerPadding: 0,
+          targetRowHeightTolerance: 0.15,
+          targetRowHeight: 235,
+        },
+      );
+
+      return {
+        ...justifiedLayoutResult,
+        containerWidth: calculateWidth(justifiedLayoutResult.boxes),
+      };
+    })(),
+  );
+
+  $effect(() => {
+    if (!lastAssetMouseEvent) {
+      assetInteraction.clearAssetSelectionCandidates();
+    }
   });
 
-  $: geometry = (() => {
-    const justifiedLayoutResult = justifiedLayout(
-      assets.map((asset) => getAssetRatio(asset)),
-      {
-        boxSpacing: 2,
-        containerWidth: Math.floor(viewport.width),
-        containerPadding: 0,
-        targetRowHeightTolerance: 0.15,
-        targetRowHeight: 235,
-      },
-    );
+  $effect(() => {
+    if (!shiftKeyIsDown) {
+      assetInteraction.clearAssetSelectionCandidates();
+    }
+  });
 
-    return {
-      ...justifiedLayoutResult,
-      containerWidth: calculateWidth(justifiedLayoutResult.boxes),
-    };
-  })();
+  $effect(() => {
+    if (shiftKeyIsDown && lastAssetMouseEvent) {
+      selectAssetCandidates(lastAssetMouseEvent);
+    }
+  });
 </script>
 
-<svelte:window on:popstate|preventDefault={closeViewer} />
+<svelte:window onkeydown={onKeyDown} onkeyup={onKeyUp} onselectstart={onSelectStart} use:shortcuts={shortcutList} />
+
+{#if isShowDeleteConfirmation}
+  <DeleteAssetDialog
+    size={assetInteraction.selectedAssets.size}
+    onCancel={() => (isShowDeleteConfirmation = false)}
+    onConfirm={() => handlePromiseError(trashOrDelete(true))}
+  />
+{/if}
+
+{#if showShortcuts}
+  <ShowShortcuts onClose={() => (showShortcuts = !showShortcuts)} />
+{/if}
 
 {#if assets.length > 0}
   <div class="relative" style="height: {geometry.containerHeight}px;width: {geometry.containerWidth}px ">
@@ -119,30 +331,51 @@
         class="absolute"
         style="width: {geometry.boxes[i].width}px; height: {geometry.boxes[i].height}px; top: {geometry.boxes[i]
           .top}px; left: {geometry.boxes[i].left}px"
+        title={showAssetName ? asset.originalFileName : ''}
       >
         <Thumbnail
-          {asset}
           readonly={disableAssetSelect}
-          on:click={(e) => (isMultiSelectionMode ? selectAssetHandler(e) : viewAssetHandler(e))}
-          on:select={selectAssetHandler}
-          on:intersected={(event) =>
-            i === Math.max(1, assets.length - 7) ? dispatch('intersected', event.detail) : undefined}
-          selected={selectedAssets.has(asset)}
+          onClick={(asset) => {
+            if (assetInteraction.selectionActive) {
+              handleSelectAssets(asset);
+              return;
+            }
+            void viewAssetHandler(asset);
+          }}
+          onSelect={(asset) => handleSelectAssets(asset)}
+          onMouseEvent={() => assetMouseEventHandler(asset)}
+          onIntersected={() => (i === Math.max(1, assets.length - 7) ? onIntersected?.() : void 0)}
           {showArchiveIcon}
+          {asset}
+          selected={assetInteraction.selectedAssets.has(asset)}
+          selectionCandidate={assetInteraction.assetSelectionCandidates.has(asset)}
           thumbnailWidth={geometry.boxes[i].width}
           thumbnailHeight={geometry.boxes[i].height}
         />
+        {#if showAssetName}
+          <div
+            class="absolute text-center p-1 text-xs font-mono font-semibold w-full bottom-0 bg-gradient-to-t bg-slate-50/75 overflow-clip text-ellipsis whitespace-pre-wrap"
+          >
+            {asset.originalFileName}
+          </div>
+        {/if}
       </div>
     {/each}
   </div>
 {/if}
 
 <!-- Overlay Asset Viewer -->
-{#if $showAssetViewer}
-  <AssetViewer
-    asset={selectedAsset}
-    on:previous={navigateAssetBackward}
-    on:next={navigateAssetForward}
-    on:close={closeViewer}
-  />
+{#if $isViewerOpen}
+  <Portal target="body">
+    <AssetViewer
+      asset={$viewingAsset}
+      onAction={handleAction}
+      onPrevious={handlePrevious}
+      onNext={handleNext}
+      onClose={() => {
+        assetViewingStore.showAssetViewer(false);
+        handlePromiseError(navigate({ targetRoute: 'current', assetId: null }));
+      }}
+    />
+  </Portal>
 {/if}

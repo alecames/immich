@@ -1,66 +1,61 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
-  import ConfirmDialogue from './confirm-dialogue.svelte';
-  import { maximumLengthSearchPeople, timeBeforeShowLoadingSpinner } from '$lib/constants';
+  import ConfirmDialog from './dialog/confirm-dialog.svelte';
+  import { timeDebounceOnSearch } from '$lib/constants';
   import { handleError } from '$lib/utils/handle-error';
 
-  import { clickOutside } from '$lib/utils/click-outside';
+  import { clickOutside } from '$lib/actions/click-outside';
   import LoadingSpinner from './loading-spinner.svelte';
   import { delay } from '$lib/utils/asset-utils';
   import { timeToLoadTheMap } from '$lib/constants';
   import { searchPlaces, type AssetResponseDto, type PlacesResponseDto } from '@immich/sdk';
   import SearchBar from '../elements/search-bar.svelte';
-
-  export const title = 'Change Location';
-  export let asset: AssetResponseDto | undefined = undefined;
+  import { listNavigation } from '$lib/actions/list-navigation';
+  import { t } from 'svelte-i18n';
+  import CoordinatesInput from '$lib/components/shared-components/coordinates-input.svelte';
+  import Map from '$lib/components/shared-components/map/map.svelte';
 
   interface Point {
     lng: number;
     lat: number;
   }
 
-  let places: PlacesResponseDto[] = [];
-  let suggestedPlaces: PlacesResponseDto[] = [];
-  let searchWord: string;
-  let isSearching = false;
-  let showSpinner = false;
-  let focusedElements: (HTMLButtonElement | null)[] = Array.from({ length: maximumLengthSearchPeople }, () => null);
-  let indexFocus: number | null = null;
-  let hideSuggestion = false;
-  let addClipMapMarker: (long: number, lat: number) => void;
+  interface Props {
+    asset?: AssetResponseDto | undefined;
+    onCancel: () => void;
+    onConfirm: (point: Point) => void;
+  }
 
-  const dispatch = createEventDispatcher<{
-    cancel: void;
-    confirm: Point;
-  }>();
+  let { asset = undefined, onCancel, onConfirm }: Props = $props();
 
-  $: lat = asset?.exifInfo?.latitude || 0;
-  $: lng = asset?.exifInfo?.longitude || 0;
-  $: zoom = lat && lng ? 15 : 1;
+  let places: PlacesResponseDto[] = $state([]);
+  let suggestedPlaces: PlacesResponseDto[] = $state([]);
+  let searchWord: string = $state('');
+  let latestSearchTimeout: number;
+  let showLoadingSpinner = $state(false);
+  let suggestionContainer: HTMLDivElement | undefined = $state();
+  let hideSuggestion = $state(false);
+  let mapElement = $state<ReturnType<typeof Map>>();
 
-  $: {
+  let lat = $derived(asset?.exifInfo?.latitude ?? undefined);
+  let lng = $derived(asset?.exifInfo?.longitude ?? undefined);
+  let zoom = $derived(lat !== undefined && lng !== undefined ? 12.5 : 1);
+
+  $effect(() => {
     if (places) {
       suggestedPlaces = places.slice(0, 5);
-      indexFocus = null;
     }
     if (searchWord === '') {
       suggestedPlaces = [];
     }
-  }
+  });
 
-  let point: Point | null = null;
-
-  const handleCancel = () => dispatch('cancel');
-
-  const handleSelect = (selected: Point) => {
-    point = selected;
-  };
+  let point: Point | null = $state(null);
 
   const handleConfirm = () => {
     if (point) {
-      dispatch('confirm', point);
+      onConfirm(point);
     } else {
-      dispatch('cancel');
+      onCancel();
     }
   };
 
@@ -68,150 +63,132 @@
     return `${name}${admin1Name ? ', ' + admin1Name : ''}${admin2Name ? ', ' + admin2Name : ''}`;
   };
 
-  const handleSearchPlaces = async () => {
-    if (searchWord === '' || isSearching) {
-      return;
+  const handleSearchPlaces = () => {
+    if (latestSearchTimeout) {
+      clearTimeout(latestSearchTimeout);
     }
+    showLoadingSpinner = true;
 
-    // TODO: refactor setTimeout/clearTimeout logic - there are no less than 12 places that duplicate this code
-    isSearching = true;
-    const timeout = setTimeout(() => (showSpinner = true), timeBeforeShowLoadingSpinner);
-    try {
-      places = await searchPlaces({ name: searchWord });
-    } catch (error) {
-      places = [];
-      handleError(error, "Can't search places");
-    } finally {
-      clearTimeout(timeout);
-      isSearching = false;
-      showSpinner = false;
-    }
+    // eslint-disable-next-line unicorn/prefer-global-this
+    const searchTimeout = window.setTimeout(() => {
+      if (searchWord === '') {
+        places = [];
+        showLoadingSpinner = false;
+        return;
+      }
+
+      searchPlaces({ name: searchWord })
+        .then((searchResult) => {
+          // skip result when a newer search is happening
+          if (latestSearchTimeout === searchTimeout) {
+            places = searchResult;
+            showLoadingSpinner = false;
+          }
+        })
+        .catch((error) => {
+          // skip error when a newer search is happening
+          if (latestSearchTimeout === searchTimeout) {
+            places = [];
+            handleError(error, $t('errors.cant_search_places'));
+            showLoadingSpinner = false;
+          }
+        });
+    }, timeDebounceOnSearch);
+    latestSearchTimeout = searchTimeout;
   };
 
   const handleUseSuggested = (latitude: number, longitude: number) => {
     hideSuggestion = true;
     point = { lng: longitude, lat: latitude };
-    addClipMapMarker(longitude, latitude);
-  };
-
-  const handleKeyboardPress = (event: KeyboardEvent) => {
-    if (suggestedPlaces.length === 0) {
-      return;
-    }
-
-    event.stopPropagation();
-    switch (event.key) {
-      case 'ArrowDown': {
-        event.preventDefault();
-        if (indexFocus === null) {
-          indexFocus = 0;
-        } else if (indexFocus === suggestedPlaces.length - 1) {
-          indexFocus = 0;
-        } else {
-          indexFocus++;
-        }
-        focusedElements[indexFocus]?.focus();
-        return;
-      }
-      case 'ArrowUp': {
-        if (indexFocus === null) {
-          indexFocus = 0;
-          return;
-        }
-        if (indexFocus === 0) {
-          indexFocus = suggestedPlaces.length - 1;
-        } else {
-          indexFocus--;
-        }
-        focusedElements[indexFocus]?.focus();
-
-        return;
-      }
-      case 'Enter': {
-        if (indexFocus !== null) {
-          hideSuggestion = true;
-          handleUseSuggested(suggestedPlaces[indexFocus].latitude, suggestedPlaces[indexFocus].longitude);
-        }
-      }
-    }
+    mapElement?.addClipMapMarker(longitude, latitude);
   };
 </script>
 
-<svelte:document on:keydown={handleKeyboardPress} />
-
-<ConfirmDialogue
-  confirmColor="primary"
-  cancelColor="secondary"
-  title="Change Location"
-  width={800}
-  onConfirm={handleConfirm}
-  onClose={handleCancel}
->
-  <div slot="prompt" class="flex flex-col w-full h-full gap-2">
-    <div class="relative w-64 sm:w-96" use:clickOutside on:outclick={() => (hideSuggestion = true)}>
-      <button class="w-full" on:click={() => (hideSuggestion = false)}>
-        <SearchBar
-          placeholder="Search places"
-          bind:name={searchWord}
-          isSearching={showSpinner}
-          on:reset={() => {
-            suggestedPlaces = [];
-          }}
-          on:search={handleSearchPlaces}
-          roundedBottom={suggestedPlaces.length === 0 || hideSuggestion}
-        />
-      </button>
-      <div class="absolute z-[99] w-full" id="suggestion">
-        {#if !hideSuggestion}
-          {#each suggestedPlaces as place, index}
-            <button
-              bind:this={focusedElements[index]}
-              class=" flex w-full border-t border-gray-400 dark:border-immich-dark-gray h-14 place-items-center bg-gray-200 p-2 dark:bg-gray-700 hover:bg-gray-300 hover:dark:bg-[#232932] focus:bg-gray-300 focus:dark:bg-[#232932] {index ===
-              suggestedPlaces.length - 1
-                ? 'rounded-b-lg border-b'
-                : ''}"
-              on:click={() => handleUseSuggested(place.latitude, place.longitude)}
-            >
-              <p class="ml-4 text-sm text-gray-700 dark:text-gray-100 truncate">
-                {getLocation(place.name, place.admin1name, place.admin2name)}
-              </p>
+<ConfirmDialog confirmColor="primary" title={$t('change_location')} width="wide" onConfirm={handleConfirm} {onCancel}>
+  {#snippet promptSnippet()}
+    <div class="flex flex-col w-full h-full gap-2">
+      <div class="relative w-64 sm:w-96">
+        {#if suggestionContainer}
+          <div
+            use:clickOutside={{ onOutclick: () => (hideSuggestion = true) }}
+            use:listNavigation={suggestionContainer}
+          >
+            <button type="button" class="w-full" onclick={() => (hideSuggestion = false)}>
+              <SearchBar
+                placeholder={$t('search_places')}
+                bind:name={searchWord}
+                {showLoadingSpinner}
+                onReset={() => (suggestedPlaces = [])}
+                onSearch={handleSearchPlaces}
+                roundedBottom={suggestedPlaces.length === 0 || hideSuggestion}
+              />
             </button>
-          {/each}
+          </div>
         {/if}
+
+        <div class="absolute z-[99] w-full" id="suggestion" bind:this={suggestionContainer}>
+          {#if !hideSuggestion}
+            {#each suggestedPlaces as place, index}
+              <button
+                type="button"
+                class=" flex w-full border-t border-gray-400 dark:border-immich-dark-gray h-14 place-items-center bg-gray-200 p-2 dark:bg-gray-700 hover:bg-gray-300 hover:dark:bg-[#232932] focus:bg-gray-300 focus:dark:bg-[#232932] {index ===
+                suggestedPlaces.length - 1
+                  ? 'rounded-b-lg border-b'
+                  : ''}"
+                onclick={() => handleUseSuggested(place.latitude, place.longitude)}
+              >
+                <p class="ml-4 text-sm text-gray-700 dark:text-gray-100 truncate">
+                  {getLocation(place.name, place.admin1name, place.admin2name)}
+                </p>
+              </button>
+            {/each}
+          {/if}
+        </div>
+      </div>
+
+      <span>{$t('pick_a_location')}</span>
+      <div class="h-[500px] min-h-[300px] w-full">
+        {#await import('../shared-components/map/map.svelte')}
+          {#await delay(timeToLoadTheMap) then}
+            <!-- show the loading spinner only if loading the map takes too much time -->
+            <div class="flex items-center justify-center h-full w-full">
+              <LoadingSpinner />
+            </div>
+          {/await}
+        {:then { default: Map }}
+          <Map
+            bind:this={mapElement}
+            mapMarkers={lat !== undefined && lng !== undefined && asset
+              ? [
+                  {
+                    id: asset.id,
+                    lat,
+                    lon: lng,
+                    city: asset.exifInfo?.city ?? null,
+                    state: asset.exifInfo?.state ?? null,
+                    country: asset.exifInfo?.country ?? null,
+                  },
+                ]
+              : []}
+            {zoom}
+            center={lat && lng ? { lat, lng } : undefined}
+            simplified={true}
+            clickable={true}
+            onClickPoint={(selected) => (point = selected)}
+          />
+        {/await}
+      </div>
+
+      <div class="grid sm:grid-cols-2 gap-4 text-sm text-left mt-4">
+        <CoordinatesInput
+          lat={point ? point.lat : lat}
+          lng={point ? point.lng : lng}
+          onUpdate={(lat, lng) => {
+            point = { lat, lng };
+            mapElement?.addClipMapMarker(lng, lat);
+          }}
+        />
       </div>
     </div>
-    <label for="datetime">Pick a location</label>
-    <div class="h-[500px] min-h-[300px] w-full">
-      {#await import('../shared-components/map/map.svelte')}
-        {#await delay(timeToLoadTheMap) then}
-          <!-- show the loading spinner only if loading the map takes too much time -->
-          <div class="flex items-center justify-center h-full w-full">
-            <LoadingSpinner />
-          </div>
-        {/await}
-      {:then component}
-        <svelte:component
-          this={component.default}
-          mapMarkers={lat && lng && asset
-            ? [
-                {
-                  id: asset.id,
-                  lat,
-                  lon: lng,
-                  city: asset.exifInfo?.city ?? null,
-                  state: asset.exifInfo?.state ?? null,
-                  country: asset.exifInfo?.country ?? null,
-                },
-              ]
-            : []}
-          {zoom}
-          bind:addClipMapMarker
-          center={lat && lng ? { lat, lng } : undefined}
-          simplified={true}
-          clickable={true}
-          on:clickedPoint={({ detail: point }) => handleSelect(point)}
-        />
-      {/await}
-    </div>
-  </div>
-</ConfirmDialogue>
+  {/snippet}
+</ConfirmDialog>

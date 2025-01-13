@@ -1,20 +1,22 @@
-import { IDatabaseRepository, Version } from '@app/domain';
+import { IDatabaseRepository } from 'src/interfaces/database.interface';
+import { Mocked, vitest } from 'vitest';
 
-export const newDatabaseRepositoryMock = (): jest.Mocked<IDatabaseRepository> => {
+export const newDatabaseRepositoryMock = (): Mocked<IDatabaseRepository> => {
   return {
-    getExtensionVersion: jest.fn(),
-    getAvailableExtensionVersion: jest.fn(),
-    getPreferredVectorExtension: jest.fn(),
-    getPostgresVersion: jest.fn().mockResolvedValue(new Version(14, 0, 0)),
-    createExtension: jest.fn().mockImplementation(() => Promise.resolve()),
-    updateExtension: jest.fn(),
-    updateVectorExtension: jest.fn(),
-    reindex: jest.fn(),
-    shouldReindex: jest.fn(),
-    runMigrations: jest.fn(),
-    withLock: jest.fn().mockImplementation((_, function_: <R>() => Promise<R>) => function_()),
-    tryLock: jest.fn(),
-    isBusy: jest.fn(),
-    wait: jest.fn(),
+    init: vitest.fn(),
+    reconnect: vitest.fn(),
+    getExtensionVersion: vitest.fn(),
+    getExtensionVersionRange: vitest.fn(),
+    getPostgresVersion: vitest.fn().mockResolvedValue('14.10 (Debian 14.10-1.pgdg120+1)'),
+    getPostgresVersionRange: vitest.fn().mockReturnValue('>=14.0.0'),
+    createExtension: vitest.fn().mockResolvedValue(void 0),
+    updateVectorExtension: vitest.fn(),
+    reindex: vitest.fn(),
+    shouldReindex: vitest.fn(),
+    runMigrations: vitest.fn(),
+    withLock: vitest.fn().mockImplementation((_, function_: <R>() => Promise<R>) => function_()),
+    tryLock: vitest.fn(),
+    isBusy: vitest.fn(),
+    wait: vitest.fn(),
   };
 };

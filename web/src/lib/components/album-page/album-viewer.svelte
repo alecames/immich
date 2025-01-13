@@ -1,36 +1,40 @@
 <script lang="ts">
-  import { browser } from '$app/environment';
   import SelectAllAssets from '$lib/components/photos-page/actions/select-all-assets.svelte';
   import { assetViewingStore } from '$lib/stores/asset-viewing.store';
   import { dragAndDropFilesStore } from '$lib/stores/drag-and-drop-files.store';
   import { fileUploadHandler, openFileUploadDialog } from '$lib/utils/file-uploader';
   import type { AlbumResponseDto, SharedLinkResponseDto, UserResponseDto } from '@immich/sdk';
-  import { onDestroy, onMount } from 'svelte';
-  import { createAssetInteractionStore } from '../../stores/asset-interaction.store';
-  import { AssetStore } from '../../stores/assets.store';
-  import { downloadArchive } from '../../utils/asset-utils';
+  import { AssetStore } from '$lib/stores/assets.store';
+  import { cancelMultiselect, downloadAlbum } from '$lib/utils/asset-utils';
   import CircleIconButton from '../elements/buttons/circle-icon-button.svelte';
   import DownloadAction from '../photos-page/actions/download-action.svelte';
   import AssetGrid from '../photos-page/asset-grid.svelte';
   import AssetSelectControlBar from '../photos-page/asset-select-control-bar.svelte';
   import ControlAppBar from '../shared-components/control-app-bar.svelte';
-  import ImmichLogo from '../shared-components/immich-logo.svelte';
+  import ImmichLogoSmallLink from '../shared-components/immich-logo-small-link.svelte';
   import ThemeButton from '../shared-components/theme-button.svelte';
-  import { shouldIgnoreShortcut } from '$lib/utils/shortcut';
+  import { shortcut } from '$lib/actions/shortcut';
   import { mdiFileImagePlusOutline, mdiFolderDownloadOutline } from '@mdi/js';
   import { handlePromiseError } from '$lib/utils';
   import AlbumSummary from './album-summary.svelte';
+  import { t } from 'svelte-i18n';
+  import { onDestroy } from 'svelte';
+  import { AssetInteraction } from '$lib/stores/asset-interaction.svelte';
 
-  export let sharedLink: SharedLinkResponseDto;
-  export let user: UserResponseDto | undefined = undefined;
+  interface Props {
+    sharedLink: SharedLinkResponseDto;
+    user?: UserResponseDto | undefined;
+  }
+
+  let { sharedLink, user = undefined }: Props = $props();
 
   const album = sharedLink.album as AlbumResponseDto;
+  let innerWidth: number = $state(0);
 
   let { isViewing: showAssetViewer } = assetViewingStore;
 
-  const assetStore = new AssetStore({ albumId: album.id });
-  const assetInteractionStore = createAssetInteractionStore();
-  const { isMultiSelectState, selectedAssets } = assetInteractionStore;
+  const assetStore = new AssetStore({ albumId: album.id, order: album.order });
+  const assetInteraction = new AssetInteraction();
 
   dragAndDropFilesStore.subscribe((value) => {
     if (value.isDragging && value.files.length > 0) {
@@ -38,86 +42,70 @@
       dragAndDropFilesStore.set({ isDragging: false, files: [] });
     }
   });
-
-  const onKeyboardPress = (event: KeyboardEvent) => handleKeyboardPress(event);
-
-  onMount(() => {
-    document.addEventListener('keydown', onKeyboardPress);
-  });
-
   onDestroy(() => {
-    if (browser) {
-      document.removeEventListener('keydown', onKeyboardPress);
-    }
+    assetStore.destroy();
   });
-
-  const handleKeyboardPress = (event: KeyboardEvent) => {
-    if (shouldIgnoreShortcut(event)) {
-      return;
-    }
-    if (!$showAssetViewer) {
-      switch (event.key) {
-        case 'Escape': {
-          if ($isMultiSelectState) {
-            assetInteractionStore.clearMultiselect();
-          }
-          return;
-        }
-      }
-    }
-  };
-
-  const downloadAlbum = async () => {
-    await downloadArchive(`${album.albumName}.zip`, { albumId: album.id });
-  };
 </script>
 
+<svelte:window
+  use:shortcut={{
+    shortcut: { key: 'Escape' },
+    onShortcut: () => {
+      if (!$showAssetViewer && assetInteraction.selectionActive) {
+        cancelMultiselect(assetInteraction);
+      }
+    },
+  }}
+  bind:innerWidth
+/>
+
 <header>
-  {#if $isMultiSelectState}
+  {#if assetInteraction.selectionActive}
     <AssetSelectControlBar
       ownerId={user?.id}
-      assets={$selectedAssets}
-      clearSelect={() => assetInteractionStore.clearMultiselect()}
+      assets={assetInteraction.selectedAssets}
+      clearSelect={() => assetInteraction.clearMultiselect()}
     >
-      <SelectAllAssets {assetStore} {assetInteractionStore} />
+      <SelectAllAssets {assetStore} {assetInteraction} />
       {#if sharedLink.allowDownload}
         <DownloadAction filename="{album.albumName}.zip" />
       {/if}
     </AssetSelectControlBar>
   {:else}
     <ControlAppBar showBackButton={false}>
-      <svelte:fragment slot="leading">
-        <a data-sveltekit-preload-data="hover" class="ml-6 flex place-items-center gap-2 hover:cursor-pointer" href="/">
-          <ImmichLogo height={30} width={30} />
-          <h1 class="font-immich-title text-lg text-immich-primary dark:text-immich-dark-primary">IMMICH</h1>
-        </a>
-      </svelte:fragment>
+      {#snippet leading()}
+        <ImmichLogoSmallLink width={innerWidth} />
+      {/snippet}
 
-      <svelte:fragment slot="trailing">
+      {#snippet trailing()}
         {#if sharedLink.allowUpload}
           <CircleIconButton
-            title="Add Photos"
-            on:click={() => openFileUploadDialog(album.id)}
+            title={$t('add_photos')}
+            onclick={() => openFileUploadDialog({ albumId: album.id })}
             icon={mdiFileImagePlusOutline}
           />
         {/if}
 
         {#if album.assetCount > 0 && sharedLink.allowDownload}
-          <CircleIconButton title="Download" on:click={() => downloadAlbum()} icon={mdiFolderDownloadOutline} />
+          <CircleIconButton
+            title={$t('download')}
+            onclick={() => downloadAlbum(album)}
+            icon={mdiFolderDownloadOutline}
+          />
         {/if}
 
         <ThemeButton />
-      </svelte:fragment>
+      {/snippet}
     </ControlAppBar>
   {/if}
 </header>
 
 <main class="relative h-screen overflow-hidden bg-immich-bg px-6 pt-[var(--navbar-height)] dark:bg-immich-dark-bg">
-  <AssetGrid {album} {assetStore} {assetInteractionStore}>
-    <section class="pt-24">
+  <AssetGrid enableRouting={true} {album} {assetStore} {assetInteraction}>
+    <section class="pt-8 md:pt-24">
       <!-- ALBUM TITLE -->
       <h1
-        class="bg-immich-bg text-6xl text-immich-primary outline-none transition-all dark:bg-immich-dark-bg dark:text-immich-dark-primary"
+        class="bg-immich-bg text-2xl md:text-4xl lg:text-6xl text-immich-primary outline-none transition-all dark:bg-immich-dark-bg dark:text-immich-dark-primary"
       >
         {album.albumName}
       </h1>
